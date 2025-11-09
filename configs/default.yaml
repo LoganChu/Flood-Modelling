@@ -1,0 +1,7 @@
+timestep_minutes: 10
+physics:
+  storage_coef: 0.8
+  runoff_coef: 0.3
+ml:
+  transfer_epochs: 5
+  meta_iters: 2

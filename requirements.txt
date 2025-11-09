@@ -1,0 +1,11 @@
+# Optional recommended packages for extending the scaffold
+numpy
+pandas
+pyyaml
+# For ML: install one of the following
+# torch
+# tensorflow
+# For geospatial processing (optional)
+# rasterio
+# geopandas
+pytest
