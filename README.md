@@ -1,85 +1,168 @@
 # Flood-Modelling
 
-This repository holds a working scaffold and research code for a physics-informed machine learning system for flash-flood prediction in mountainous terrain. The project combines:
-- A simple physics-based baseline (hydrologic/hydraulic) to provide process realism and interpretability.
-- Machine-learning layers for residual correction, transfer learning, and meta-learning to adapt models quickly to new catchments.
-- Sensor assimilation hooks (velocity, stage, acceleration) and satellite/radar precipitation preprocessing.
-This workspace currently contains a small, runnable scaffold (placeholders and stubs) so you can iterate quickly. It is a work-in-progress; some modules still live under `flash_flood/` while a few config/data files were copied to the repository root. If you want, I can finish consolidating everything into the root layout.
+A research platform for real-time river monitoring and flood analysis. The project combines:
 
-## Goals
-- Provide an extensible project layout for prototype development and experiments.
-- Demonstrate interfaces for: preprocessing, a physics-model baseline, ML transfer/meta-learning modules, and a simple orchestrator.
-- Ship a tiny smoke test so CI or local runs can validate the basic pipeline.
-## What is in this repository now
-
-- `flash_flood/` — primary scaffold (recommended starting point):
-	- `flash_flood/src/` — code stubs and packages:
-	- `preprocessing.py` — resampling & bias-correction placeholders
-	- `physics_model.py` — a small linear-reservoir physics model (interface for real solvers)
-	- `ml/` — `models.py`, `transfer.py`, `meta_learning.py` (lightweight placeholders)
-		- `training.py` — small orchestrator demonstrating an end-to-end flow
-	- `flash_flood/tests/test_smoke.py` — pytest smoke test for the physics model
-	- `flash_flood/requirements.txt` — recommended packages (optional)
-- Root-level files added during initial scaffolding:
-	- `configs/default.yaml` — basic config used by the demo
-	- `data/.gitkeep` — placeholder for datasets
-	- `README.flash_flood.md` — the original scaffold README (kept for reference)
-
-Note: there are duplicate config/data placeholders both under `flash_flood/` and at the repository root. We can consolidate them — tell me which layout you prefer (all files in root vs keep the `flash_flood/` package) and I will move/delete accordingly.
-## Quickstart (run the demo)
-
-1. Create and activate a virtual environment (bash on Windows):
-
-```bash
-python -m venv .venv
-source .venv/Scripts/activate
-pip install -r flash_flood/requirements.txt
-```
-
-2. Run the toy orchestrator (uses the placeholder physics+ML pipeline):
-
-```bash
-python flash_flood/src/training.py
-```
-
-3. Run the smoke test with pytest:
-
-```bash
-pip install pytest
-pytest -q flash_flood/tests/test_smoke.py
-```
-
-## Next recommended steps
-
-Choose one or more and I can implement them:
-
-1. Consolidate files into the repository root and make `src/` a top-level package (I can move files and fix imports).
-2. Replace the placeholder physics model with a real open-source model wrapper (Wflow, HEC-HMS input generator, or a simple 2D solver).
-3. Add a PyTorch example for transfer learning and a small MAML/Reptile meta-learning demo.
-4. Add an Ensemble Kalman Filter skeleton for sensor assimilation.
-5. Add a CI job (GitHub Actions) that runs the smoke test.
-
-If you want me to move everything out of `flash_flood/` into the root now, say "consolidate to root" and I'll: update imports, move files, run the smoke test, and push a commit patch here.
+- **Embedded sensor firmware** — Arduino sketches for a GPS/IMU floating drifter (LSM9DS1 + TinyGPS++ + LoRa) that logs position, velocity, and attitude to SD card.
+- **3D visualisation** — a production-ready Isaac Sim extension that replays the exact sensor path in a georeferenced photorealistic river scene, with live vector overlays, timeline scrubbing, and Newton physics validation.
+- **Data processing** — MATLAB and Python pipelines for converting raw sensor logs to clean CSV and visualising trajectory/speed data.
 
 ---
 
-If this README looks correct, I can now consolidate the repository (move the code to the root), add a small CLI, or add a PyTorch transfer-learning example — tell me which next step you prefer.
-# Flash Flood Modeling - Sample Project
+## Repository layout
 
-This sample directory contains a minimal scaffold for a physics-informed machine learning workflow for flash-flood prediction in mountainous terrain.
+```
+Flood-Modelling/
+├── arduino/                        Embedded firmware for the river drifter
+│   ├── Optimized_Code/             Core GPS + IMU logging sketch
+│   ├── gyroIncludedWriting/        Adds gyroscope and LoRa radio telemetry
+│   └── icuAHRS/                    Full AHRS with Madgwick filter + ZUPT
+├── configs/
+│   └── default.yaml                Physics and ML hyperparameters
+├── data/
+│   ├── enoFeb16th.csv              Raw Eno River float data (3 553 rows)
+│   └── enoFeb16th_smoothed.csv     Smoothed version of the same run
+├── src/
+│   ├── run_standalone.py           Isaac Sim Script Editor entry point
+│   └── exts/
+│       └── duke.flood_modelling.drifter_vis/
+│           ├── config/
+│           │   └── extension.toml  Kit extension manifest
+│           ├── duke/flood_modelling/drifter_vis/
+│           │   ├── utils.py        Constants, colour helpers, dependency checker
+│           │   ├── data_loader.py  CSV → clean pandas DataFrame
+│           │   ├── geo_converter.py LLA → ENU → USD coordinates + attitude
+│           │   ├── scene_builder.py USD stage: terrain, trajectory, drifter prim
+│           │   ├── animator.py     Pre-bake USD time samples + debug draw arrows
+│           │   ├── camera_manager.py Overview / chase / onboard cameras
+│           │   ├── ui_panel.py     omni.ui control panel
+│           │   ├── physics_validator.py Newton buoyancy + drag simulation
+│           │   └── extension.py    IExt orchestrator + menu item
+│           ├── tests/
+│           │   ├── test_data_loader.py
+│           │   └── test_geo_converter.py
+│           └── docs/OVERVIEW.md    Developer guide
+├── visualization/
+│   ├── plotSpeed.m                 MATLAB 2D/3D trajectory + speed visualisation
+│   └── rawToCSV.m                  Convert raw TXT sensor logs to CSV
+├── requirements.txt
+└── .gitignore
+```
 
-What is included
-- `src/` : lightweight Python modules (preprocessing, a simple physics model, ML placeholders for transfer/meta-learning, orchestrator).
-- `configs/` : default configuration YAML.
-- `data/` : placeholder for incoming datasets (DEM, rainfall, sensors).
-- `tests/` : a small smoke test to verify the basic pipeline imports and a simple hydrograph simulation.
+---
 
-Purpose
-This scaffold is intended to be a starting point: small, runnable, and easy to extend. It purposefully uses minimal dependencies so you can iterate locally, then replace placeholders with real hydrologic modeling code (HEC-HMS, Wflow, or detailed hydraulic solvers) and real ML models (PyTorch/TensorFlow) when ready.
+## CSV data schema
 
-Next steps
-1. Install dependencies from `requirements.txt` (optional).
-2. Replace placeholders in `src/` with real modules.
-3. Add data in `data/` and point `configs/default.yaml` at your files.
+Both CSV files share the same column layout, produced by the Arduino firmware and `rawToCSV.m`:
 
-See `flash_flood/src/training.py` for a simple orchestrator example.
+| Column | Unit | Description |
+|--------|------|-------------|
+| `Lat`, `Lon` | degrees | GPS position |
+| `Speed` | **mph** | GPS-derived speed (divide by 2.237 for m/s) |
+| `GPS_Alt` | m | GPS altitude |
+| `Time` | ms | Arduino `millis()` counter |
+| `AX`, `AY`, `AZ` | m/s² | Accelerometer (includes gravity ≈ −8.28 on AZ) |
+| `GX`, `GY`, `GZ` | rad/s | Gyroscope |
+| `MX`, `MY`, `MZ` | — | Magnetometer |
+| `Sats` | — | GPS satellite count |
+| `Dist` | m | Cumulative distance |
+| `Endpoint` | 0/1 | Run boundary marker |
+| `source_file` | — | Original log filename |
+
+---
+
+## Isaac Sim 3D Visualisation
+
+### Quick start — Script Editor
+
+1. Open Isaac Sim
+2. **Window → Script Editor**
+3. Open `src/run_standalone.py`
+4. Click **▶ Run**
+5. Press **Play** in the timeline
+
+### Quick start — Extension
+
+Add `src/exts` to the Kit extension search paths. Edit
+`~/.nvidia-omniverse/config/omniverse.toml`:
+
+```toml
+[exts]
+folders = ["/work/lc478/Flood-Modelling/src/exts"]
+```
+
+Restart Isaac Sim → **River Drifter → Load Visualisation**.
+
+### Command-line (headless)
+
+```bash
+/path/to/isaac-sim/python.sh src/run_standalone.py \
+    --csv data/enoFeb16th_smoothed.csv \
+    --fps 24 --speed 1.0 --physics
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--csv` | `data/enoFeb16th_smoothed.csv` | Input CSV |
+| `--fps` | `24` | USD timeline fps |
+| `--speed` | `1.0` | Playback speed multiplier (0.1 – 10×) |
+| `--physics` | off | Run Newton buoyancy + drag comparison |
+| `--live` | off | Per-frame update instead of pre-baking |
+| `--no-ui` | off | Skip the omni.ui control panel |
+
+### Features
+
+- **Kinematic replay** — drifter follows the exact recorded GPS path; all 3 553 positions pre-baked as USD time samples in < 1 s
+- **Live overlays** — blue velocity arrow, red acceleration arrow drawn each frame via `omni.isaac.debug_draw`
+- **Speed-gradient trajectory** — BasisCurves coloured dark blue (slow) → yellow (fast)
+- **Three cameras** — orbital overview (pre-baked orbit), chase (follows drifter), onboard POV
+- **Timeline scrubbing** — drag the frame slider to jump to any point in the run
+- **Cesium terrain** — georeferenced Cesium World Terrain + Bing Maps satellite imagery if the `cesium.omniverse` extension is installed; falls back to a flat water plane otherwise
+- **Newton physics validation** — forward-Euler buoyancy + drag simulation runs alongside kinematic replay; discrepancy coloured orange trajectory overlay
+- **Control panel** — omni.ui window with file picker, play/pause/stop, speed slider, camera selector, live GPS/speed/altitude readouts
+
+### Optional dependencies
+
+| Package | Purpose | Install |
+|---------|---------|---------|
+| `pyproj` | Higher-accuracy LLA→ENU (< 0.1 m vs ~5 m spherical) | `pip install pyproj` |
+| `cesium.omniverse` | Georeferenced 3D Tiles terrain | Omniverse Launcher |
+
+---
+
+## Running unit tests
+
+Tests cover data loading, GPS dropout removal, speed conversion, time normalisation, LLA→ENU accuracy, bobbing, and attitude estimation — all runnable without Isaac Sim.
+
+```bash
+/work/lc478/conda_envs/isaac_sim/bin/python \
+    -m pytest src/exts/duke.flood_modelling.drifter_vis/tests/ -v
+```
+
+Expected: **33 passed**.
+
+---
+
+## Swapping in a new river dataset
+
+Any CSV with the column schema above will work:
+
+1. Open the control panel → **Load CSV…** → select your file
+2. Click **Build Scene**
+
+The extension auto-derives the georeference origin from the first valid GPS row and re-builds the full scene.
+
+---
+
+## Configuration
+
+`configs/default.yaml` holds physics and ML hyperparameters used by the simulation and any future ML training runs:
+
+```yaml
+timestep_minutes: 10
+physics:
+  storage_coef: 0.8
+  runoff_coef: 0.3
+ml:
+  transfer_epochs: 5
+  meta_iters: 2
+```

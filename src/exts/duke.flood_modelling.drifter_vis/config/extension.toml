@@ -1,0 +1,29 @@
+[package]
+version      = "1.0.0"
+title        = "River Drifter Visualisation"
+description  = "Kinematic replay and Newton validation of a GPS/IMU river drifter in Isaac Sim"
+category     = "Simulation"
+keywords     = ["hydrology", "river", "drifter", "GPS", "visualization", "cesium"]
+
+# Author / contact
+[package.writeTarget]
+kit = true
+
+[dependencies]
+"omni.kit.uiapp"          = {}
+"omni.usd"                = {}
+"omni.timeline"           = {}
+"omni.physx"              = {}
+"omni.isaac.debug_draw"   = {}
+
+# Cesium is optional — the extension falls back gracefully if absent
+# "cesium.omniverse"      = {}
+
+[[python.module]]
+name = "duke.flood_modelling.drifter_vis"
+
+[settings]
+# Default CSV path relative to the repo root (overridden via UI file picker)
+exts."duke.flood_modelling.drifter_vis".default_csv = "data/enoFeb16th_smoothed.csv"
+exts."duke.flood_modelling.drifter_vis".fps          = 24.0
+exts."duke.flood_modelling.drifter_vis".prebake_mode = true

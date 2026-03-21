@@ -1,0 +1,84 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.junit.xml
+
+# ── Isaac Sim / Omniverse ─────────────────────────────────────────────────────
+# Kit cached assets and compiled shaders
+_build/
+_compiler/
+*.carb-logs/
+omni.cache/
+*.nvdb
+*.bvh
+
+# USD generated files
+*.usdz
+*.usdc
+# Keep hand-authored .usda files (human-readable ASCII USD)
+# *.usda
+
+# Omniverse Nucleus local cache
+.nvidia-omniverse/
+
+# Isaac Sim log and telemetry
+logs/
+*.log
+
+# ── Cesium ────────────────────────────────────────────────────────────────────
+cesium-native-build/
+CesiumCache/
+
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ── MATLAB ────────────────────────────────────────────────────────────────────
+*.asv
+*.mex*
+slprj/
+
+# ── OS / editor artefacts ─────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── Data files (large / raw) ──────────────────────────────────────────────────
+# Keep the two reference CSVs already in the repo; ignore any raw TXT logs
+# and large binary sensor dumps added later
+*.bin
+*.bag
+data/raw/
+data/tmp/
+
+# ── Conda / pip lock artefacts ────────────────────────────────────────────────
+pip-selfcheck.json
+.conda/

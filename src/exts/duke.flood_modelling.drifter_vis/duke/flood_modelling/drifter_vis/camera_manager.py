@@ -1,0 +1,192 @@
+"""
+camera_manager.py — Manage three viewports for the River Drifter Visualisation.
+
+Cameras
+-------
+OVERVIEW   /World/Cameras/OverviewCamera
+    Orbits the full path from above.  The orbit is pre-baked as USD time
+    samples on the camera Xform so it plays even without a Python process.
+
+CHASE      /World/Drifter/DrifterXform/ChaseCamera
+    Child prim of the drifter — inherits its animated transform and follows
+    automatically.  Fixed local offset (−5 m behind, +2 m above).
+
+ONBOARD    /World/Drifter/DrifterXform/OnboardCamera
+    Mounted on the drifter with a slight forward/upward tilt.  Gives a POV
+    perspective from inside the buoy sensor housing.
+
+Camera switching uses omni.kit.viewport.utility to set the active camera in
+the primary viewport.  If viewport utilities are unavailable (Script Editor
+or headless), a warning is logged and the call is a no-op.
+"""
+
+from __future__ import annotations
+
+import enum
+import logging
+import math
+from typing import Tuple
+
+import numpy as np
+
+from .utils import DRIFTER_XFORM_PATH, CAMERAS_PATH, USD_STAGE_FPS
+
+log = logging.getLogger(__name__)
+
+try:
+    from pxr import Gf, Usd, UsdGeom, Vt
+    import omni.usd
+    _USD_AVAILABLE = True
+except ImportError:
+    _USD_AVAILABLE = False
+
+try:
+    import omni.kit.viewport.utility as _vp_util
+    _VIEWPORT_AVAILABLE = True
+except ImportError:
+    _VIEWPORT_AVAILABLE = False
+    log.debug("omni.kit.viewport.utility not available — camera switching disabled")
+
+
+class CameraMode(enum.Enum):
+    OVERVIEW = "Overview"
+    CHASE    = "Chase (Follow)"
+    ONBOARD  = "Onboard (POV)"
+
+
+class CameraManager:
+    """
+    Create and manage the three scene cameras.
+
+    Parameters
+    ----------
+    overview_cam_path : USD path to the overview camera
+    chase_cam_path    : USD path to the chase camera (child of drifter)
+    onboard_cam_path  : USD path to the onboard camera (child of drifter)
+    centre            : (x, y, z) world-space centroid of the drifter path
+    orbit_radius      : orbital radius for the overview camera (m)
+    orbit_period_s    : time in seconds for one full orbit
+    data_duration_s   : total duration of the drifter data (s)
+    fps               : USD stage fps
+    """
+
+    def __init__(
+        self,
+        overview_cam_path: str = f"{CAMERAS_PATH}/OverviewCamera",
+        chase_cam_path:    str = f"{DRIFTER_XFORM_PATH}/ChaseCamera",
+        onboard_cam_path:  str = f"{DRIFTER_XFORM_PATH}/OnboardCamera",
+        centre:            Tuple[float, float, float] = (0.0, 0.0, 0.0),
+        orbit_radius:      float = 200.0,
+        orbit_period_s:    float = 120.0,
+        data_duration_s:   float = 527.0,
+        fps:               float = USD_STAGE_FPS,
+    ) -> None:
+        self._overview_path = overview_cam_path
+        self._chase_path    = chase_cam_path
+        self._onboard_path  = onboard_cam_path
+        self._centre        = centre
+        self._orbit_radius  = orbit_radius
+        self._orbit_period  = orbit_period_s
+        self._duration      = data_duration_s
+        self._fps           = fps
+        self._active_mode: CameraMode = CameraMode.OVERVIEW
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def bake_overview_orbit(self) -> None:
+        """
+        Pre-bake a circular orbit animation onto the overview camera Xform.
+
+        The orbit circles above the path centroid at a fixed height and radius.
+        The animation loops seamlessly over the full data duration.
+        """
+        if not _USD_AVAILABLE:
+            log.warning("USD not available — bake_overview_orbit() is a no-op")
+            return
+
+        stage = omni.usd.get_context().get_stage()
+        prim = stage.GetPrimAtPath(self._overview_path)
+        if not prim.IsValid():
+            log.warning("Overview camera prim not found: %s", self._overview_path)
+            return
+
+        xformable = UsdGeom.Xformable(prim)
+        xformable.ClearXformOpOrder()
+        translate_op = xformable.AddTranslateOp(UsdGeom.XformOp.PrecisionDouble)
+        rotate_op    = xformable.AddRotateXYZOp(UsdGeom.XformOp.PrecisionFloat)
+
+        cx, cy, cz = self._centre
+        height = self._orbit_radius * 0.6
+        num_samples = max(48, int(self._duration * self._fps / self._orbit_period))
+        # Ensure full orbit completes — repeat if data is shorter than one orbit
+        total_tc = self._duration * self._fps
+
+        log.debug(
+            "Baking overview orbit: radius=%.1fm height=%.1fm %d samples",
+            self._orbit_radius, height, num_samples,
+        )
+
+        for i in range(num_samples + 1):
+            frac = i / num_samples
+            tc = frac * total_tc
+            # Circular orbit in XZ plane (Y-up)
+            angle = 2.0 * math.pi * frac
+            ox = cx + self._orbit_radius * math.sin(angle)
+            oz = cz + self._orbit_radius * math.cos(angle)
+            oy = cy + height
+
+            translate_op.Set(Gf.Vec3d(ox, oy, oz), time=tc)
+
+            # Camera looks at centroid — compute yaw and pitch
+            dx = cx - ox
+            dz = cz - oz
+            yaw_deg   = math.degrees(math.atan2(dx, dz))
+            dist_xz   = math.sqrt(dx**2 + dz**2)
+            pitch_deg = math.degrees(math.atan2(cy - oy, dist_xz))
+            rotate_op.Set(Gf.Vec3f(float(pitch_deg), float(yaw_deg), 0.0), time=tc)
+
+        log.info("Overview orbit baked (%d samples, duration %.1f s)", num_samples, self._duration)
+
+    def activate(self, mode: CameraMode) -> None:
+        """
+        Set *mode* as the active camera in the primary viewport.
+
+        Parameters
+        ----------
+        mode : CameraMode enum value
+        """
+        self._active_mode = mode
+        path = self._path_for_mode(mode)
+
+        if not _VIEWPORT_AVAILABLE:
+            log.warning(
+                "Viewport utilities unavailable — camera switch to %s is a no-op", mode.value
+            )
+            return
+
+        try:
+            vp = _vp_util.get_active_viewport()
+            if vp is not None:
+                vp.set_active_camera(path)
+                log.info("Active camera: %s (%s)", mode.value, path)
+            else:
+                log.warning("No active viewport found")
+        except Exception as exc:
+            log.warning("Camera switch failed: %s", exc)
+
+    @property
+    def active_mode(self) -> CameraMode:
+        return self._active_mode
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
+    def _path_for_mode(self, mode: CameraMode) -> str:
+        return {
+            CameraMode.OVERVIEW: self._overview_path,
+            CameraMode.CHASE:    self._chase_path,
+            CameraMode.ONBOARD:  self._onboard_path,
+        }[mode]
