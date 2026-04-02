@@ -51,6 +51,7 @@ CAMERAS_PATH = "/World/Cameras"
 LIGHTING_PATH = "/World/Lighting"
 TRAJECTORY_PATH = "/World/River/Trajectory"
 TRAJECTORY_PHYSICS_PATH = "/World/River/TrajectoryPhysics"
+TRAJECTORY_EKF_PATH = "/World/River/TrajectoryEKF"
 WATER_PLANE_PATH = "/World/River/WaterPlane"
 
 

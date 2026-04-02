@@ -1,65 +1,174 @@
-# River Drifter Visualisation — Developer Overview
+# Developer Architecture Guide
 
 ## What this is
 
-An Isaac Sim extension that replays real GPS/IMU data from a floating river
-sensor (Eno River, NC) in a photorealistic 3D scene. The drifter follows its
-exact recorded path, with live velocity and acceleration arrows, timeline
-scrubbing, and an optional Newton physics comparison mode.
+An NVIDIA Isaac Sim extension that implements a robotics-grade digital twin of a GPS/IMU river
+drifter. The primary engineering value is trajectory reconstruction, EKF-based state estimation,
+and physics-model validation against real sensor data — not the 3-D render. The Isaac Sim USD
+stage is the ground-truth inspection environment.
 
-## Quick start (Script Editor)
+**Robotics domains covered:** Localization, State Estimation, Sensor Fusion, Perception,
+Motion Modeling, Controls/Dynamics, Sim-to-Real Validation.
 
+---
+
+## Quick start
+
+### Script Editor
+
+```
 1. Open Isaac Sim
 2. Window → Script Editor
-3. Open `src/run_standalone.py`
-4. Click ▶ Run
-5. Press Play in the timeline
+3. Open src/run_standalone.py → click ▶ Run
+4. Press Play in the timeline
+```
 
-## Quick start (Extension)
+### Extension
 
-1. Add `src/exts` to the Kit extension search paths:
-   Edit `~/.nvidia-omniverse/config/omniverse.toml`:
-   ```toml
-   [exts]
-   folders = ["/work/lc478/Flood-Modelling/src/exts"]
-   ```
-2. Restart Isaac Sim
-3. Menu → River Drifter → Load Visualisation
+```toml
+# ~/.nvidia-omniverse/config/omniverse.toml
+[exts]
+folders = ["/work/lc478/Flood-Modelling/src/exts"]
+```
 
-## Module map
+Restart → **River Drifter → Load Visualisation**.
 
-| File | Purpose |
-|------|---------|
-| `utils.py` | Constants, colour helpers, dependency checker |
-| `data_loader.py` | CSV → clean DataFrame |
-| `geo_converter.py` | LLA → ENU → USD coordinates + attitude |
-| `scene_builder.py` | USD stage: terrain, trajectory, drifter prim, lighting |
-| `animator.py` | Pre-bake USD time samples + per-frame debug arrows |
-| `camera_manager.py` | Overview orbit, chase, onboard cameras |
-| `ui_panel.py` | omni.ui control panel |
-| `physics_validator.py` | Newton buoyancy+drag simulation |
-| `extension.py` | IExt entry point, orchestrates all modules |
-| `../../run_standalone.py` | Direct Script Editor runner |
+---
+
+## Module map and layer ownership
+
+| Module | Layer | Robotics function |
+|--------|-------|------------------|
+| `data_loader.py` | Sensor Ingestion | Raw sensor → clean DataFrame; dropout removal, unit normalisation, segment detection |
+| `geo_converter.py` | State Estimation | WGS84→ENU localization; roll/pitch/yaw from accel + GPS heading |
+| `state_estimator.py` | State Estimation | EKF `[x,y,vx,vy,ax,ay]` — GPS + IMU fusion *(planned Phase 3)* |
+| `physics_validator.py` | Motion Modeling + Validation | Forward-Euler buoyancy/drag dynamics; discrepancy vs recorded path |
+| `metrics.py` | Validation | RMSE, velocity error, drift divergence, filter improvement ratio *(planned Phase 4)* |
+| `scene_builder.py` | Visualization | USD stage: terrain, trajectory prims, drifter mesh |
+| `animator.py` | Visualization | Pre-bake USD time samples; per-frame debug-draw arrows |
+| `camera_manager.py` | Visualization | Overview orbit, chase, onboard cameras |
+| `ui_panel.py` | Interaction | omni.ui panel: file picker, playback, live readouts |
+| `extension.py` | Orchestrator | IExt entry point; wires all layers |
+| `utils.py` | Shared | Physical constants, colour maps, dependency checker |
+
+---
 
 ## Coordinate system
 
 ```
-ENU East  → USD +X
-ENU Up    → USD +Y  (GPS alt relative to origin)
-ENU North → USD +Z
+ENU East  (+m) → USD +X
+ENU Up    (+m) → USD +Y   (GPS altitude relative to origin)
+ENU North (+m) → USD +Z
 ```
-Stage: Y-up, 1 unit = 1 metre.
 
-## CSV schema
+Stage: Y-up, 1 unit = 1 metre. All internal computation uses ENU metres.
+
+### LLA → ENU conversion
+
+Two code paths in `GeoConverter`:
+
+| Path | Error | When used |
+|------|-------|-----------|
+| Spherical approx (`_lla_to_enu_spherical`) | ~3–5 m at 350 m baseline | pyproj not installed |
+| ECEF via pyproj (`_lla_to_enu_pyproj`) | < 0.1 m | pyproj available |
+
+---
+
+## Sensor data schema
 
 ```
 Lat, Lon, Sats, Speed, GPS_Alt, Dist, Time, Alt,
 AX, AY, AZ, GX, GY, GZ, MX, MY, MZ, Endpoint, source_file
 ```
 
-- `Speed` is in **mph** (converted to m/s by dividing by 2.237)
-- `Time` is Arduino `millis()` in milliseconds
-- `AX/AY/AZ` are accelerometer readings in m/s² (include gravity ~−8.28 on AZ)
+Key conventions:
+- `Speed` is in **mph** — divide by 2.237 for m/s (matches MATLAB `rawToCSV.m`)
+- `Time` is Arduino `millis()` in ms — may reset between concatenated segments
+- `AX/AY/AZ` include gravity; AZ median ≈ −8.28 m/s² (device flat, gravity on Z)
+- Segment boundary: backward jump > 1.0 s in `millis()` counter
+
+---
+
+## State estimation detail
+
+### Implemented: complementary filter (geo_converter.py)
+
+```python
+# Gravity debias on AZ
+g_bias_z = median(AZ)
+az_debiased = AZ - g_bias_z
+
+# Attitude
+pitch = atan2(AX_debiased, sqrt(AY² + AZ_debiased²))
+roll  = atan2(AY, clamp(AZ_debiased, -g, +g))
+yaw   = -radians(heading_deg)   # GPS heading; 0=North, CW → USD Y-up convention
+```
+
+### Planned: EKF (state_estimator.py)
+
+State vector: `x = [east, north, vx, vz, ax, az]` (6 × 1)
+
+Process model (constant-acceleration kinematics):
+```
+east(k+1)  = east(k)  + vx(k)·dt + 0.5·ax(k)·dt²
+north(k+1) = north(k) + vz(k)·dt + 0.5·az(k)·dt²
+vx(k+1)    = vx(k)    + ax(k)·dt
+vz(k+1)    = vz(k)    + az(k)·dt
+ax(k+1)    = ax(k)                 (random walk)
+az(k+1)    = az(k)
+```
+
+IMU accelerations inform the prediction step. GPS position and speed are measurement updates.
+Mahalanobis-distance gate: reject GPS updates where `innovation^T S^{-1} innovation > χ²_{0.95}`.
+
+Process noise Q and measurement noise R are tunable in `configs/default.yaml` under `ekf:`.
+
+---
+
+## Physics dynamics model detail
+
+```
+State:   (east, north, vx, vz)
+Forces:  drag = 0.5·ρ·Cd·A·|v_rel|²·v̂_rel   (opposes relative motion vs river current)
+         buoyancy + gravity cancel (horizontal plane; drifter at equilibrium depth)
+Integrator: explicit forward Euler at recorded dt_s timesteps
+Current:    mean of first 20 GPS velocity vectors (bulk-flow proxy)
+```
+
+Physical parameters in `DrifterPhysicsParams` (and `configs/default.yaml`):
+- `mass_kg = 1.5`, `radius_m = 0.15`, `height_m = 0.30`, `Cd = 0.82`
+- Frontal area: `2r × h = 0.09 m²` (cylinder face)
+- Submerged volume: `π r² h / 2 = 0.0106 m³` (50 % submerged assumption)
+
+Discrepancy metric (per-point):
+```python
+disc = sqrt((sim_east - rec_east)² + (sim_north - rec_north)²)
+# logged: mean, max, 95th-percentile
+```
+
+---
+
+## USD baking pipeline
+
+```
+DrifterDataLoader.load()
+    → DataFrame (3,553 rows × ~25 cols)
+GeoConverter.convert()
+    → GeoResult (ENU + USD coords + attitude arrays)
+SceneBuilder.build()
+    → USD stage with Cesium terrain, trajectory BasisCurves, drifter Xform
+Animator.bake()
+    → USD time samples for all 3,553 positions (< 1 s wall time)
+    → Per-frame debug draw: velocity (blue) + acceleration (red) arrows
+PhysicsValidator.simulate()   (--physics flag)
+    → sim_east, sim_north
+    → compute_discrepancy()
+    → bake_physics_trajectory()  (orange→red overlay BasisCurves)
+```
+
+USD timecode formula: `tc = time_s × fps / speed_scale` (default 24 fps, 1.0×).
+
+---
 
 ## Running unit tests
 
@@ -68,20 +177,32 @@ AX, AY, AZ, GX, GY, GZ, MX, MY, MZ, Endpoint, source_file
     -m pytest src/exts/duke.flood_modelling.drifter_vis/tests/ -v
 ```
 
-Tests cover: GPS dropout removal, speed conversion, time normalisation,
-LLA→ENU accuracy, bobbing, attitude, and full integration with real CSV.
+**Expected: 33 passed.** No Isaac Sim needed — all tests run against pure Python + numpy/pandas.
 
-## Swapping in a new river dataset
+Tests cover:
+- GPS dropout removal (Lat=Lon=0 filter)
+- Speed conversion accuracy (mph → m/s)
+- Time normalisation and segment detection
+- LLA→ENU accuracy (< 0.1 m with pyproj, < 5 m spherical)
+- Attitude estimation (bobbing, roll/pitch/yaw)
+- Full integration test with real Eno River CSV
 
-1. Collect CSV in the same schema (see above)
-2. Open the control panel → Load CSV → select your file
-3. Click Build Scene
-4. The extension auto-detects the origin from the first valid GPS row
+---
+
+## Adding a new dataset
+
+1. Collect CSV in the same schema (see `data_loader.py` `REQUIRED_COLUMNS`)
+2. Open the control panel → **Load CSV…** → select file
+3. Click **Build Scene**
+4. Origin is auto-derived from the first valid GPS row; all coordinates are origin-relative
+
+---
 
 ## Optional dependencies
 
 | Package | Purpose | Install |
 |---------|---------|---------|
-| `pyproj` | Higher-accuracy LLA→ENU (< 0.1 m vs ~5 m) | `pip install pyproj` |
-| `cesium.omniverse` | Georeferenced 3D Tiles terrain | Omniverse Launcher |
+| `pyproj` | High-accuracy LLA→ENU (< 0.1 m) | `pip install pyproj` |
+| `cesium.omniverse` | Georeferenced 3-D Tiles terrain | Omniverse Launcher |
 | `omni.isaac.debug_draw` | Live velocity/acceleration arrows | Bundled with Isaac Sim |
+| `scipy` | EKF linear algebra, curvature computation (Phase 3–4) | `pip install scipy` |

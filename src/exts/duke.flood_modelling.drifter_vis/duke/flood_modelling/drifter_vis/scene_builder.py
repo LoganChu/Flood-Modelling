@@ -38,7 +38,8 @@ import numpy as np
 from .utils import (
     WORLD_PATH, CESIUM_PATH, RIVER_PATH, DRIFTER_PATH, DRIFTER_XFORM_PATH,
     CAMERAS_PATH, LIGHTING_PATH, TRAJECTORY_PATH, TRAJECTORY_PHYSICS_PATH,
-    WATER_PLANE_PATH, speed_to_rgb, discrepancy_to_rgb, check_dependencies,
+    TRAJECTORY_EKF_PATH, WATER_PLANE_PATH, speed_to_rgb, discrepancy_to_rgb,
+    check_dependencies,
 )
 
 log = logging.getLogger(__name__)
@@ -102,6 +103,8 @@ class SceneBuilder:
         physics_east: Optional[np.ndarray] = None,
         physics_north: Optional[np.ndarray] = None,
         discrepancy: Optional[np.ndarray] = None,
+        ekf_east: Optional[np.ndarray] = None,
+        ekf_north: Optional[np.ndarray] = None,
     ) -> None:
         """
         Build the full USD scene.
@@ -112,6 +115,7 @@ class SceneBuilder:
         speeds          : speed_ms values, array of shape (N,), used for trajectory colour
         physics_east/north : optional simulated ENU coordinates for physics trajectory
         discrepancy     : optional metres-error array for physics trajectory colour
+        ekf_east/north  : optional EKF-filtered ENU positions for the EKF overlay
         """
         if not _USD_AVAILABLE:
             log.warning("USD not available — SceneBuilder.build() is a no-op")
@@ -137,6 +141,9 @@ class SceneBuilder:
                 stage, physics_east, physics_north or np.zeros_like(physics_east),
                 up_arr, discrepancy
             )
+
+        if ekf_east is not None and ekf_north is not None:
+            self._build_ekf_trajectory(stage, ekf_east, ekf_north, up_arr)
 
         log.info("USD scene build complete.")
 
@@ -297,6 +304,29 @@ class SceneBuilder:
         traj.CreateWidthsAttr(Vt.FloatArray([0.05] * len(pts)))
 
         log.debug("Physics trajectory created")
+
+    def _build_ekf_trajectory(
+        self,
+        stage,
+        east_arr: np.ndarray,
+        north_arr: np.ndarray,
+        up_arr: np.ndarray,
+    ) -> None:
+        """EKF-filtered trajectory overlay, constant green, offset +0.6 m Y."""
+        traj = UsdGeom.BasisCurves.Define(stage, TRAJECTORY_EKF_PATH)
+        traj.GetTypeAttr().Set(UsdGeom.Tokens.linear)
+
+        pts = [Gf.Vec3f(float(e), float(u) + 0.6, float(n))
+               for e, u, n in zip(east_arr, up_arr, north_arr)]
+        traj.GetPointsAttr().Set(Vt.Vec3fArray(pts))
+        traj.GetCurveVertexCountsAttr().Set(Vt.IntArray([len(pts)]))
+
+        # Constant green — visually distinct from GPS (viridis) and physics (orange)
+        colour = Gf.Vec3f(0.1, 0.8, 0.3)
+        traj.CreateDisplayColorAttr(Vt.Vec3fArray([colour] * len(pts)))
+        traj.CreateWidthsAttr(Vt.FloatArray([0.05] * len(pts)))
+
+        log.debug("EKF trajectory created")
 
     def _build_drifter(self, stage) -> None:
         """Create the drifter Xform hierarchy with cylinder mesh and cameras."""

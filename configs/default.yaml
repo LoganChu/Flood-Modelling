@@ -1,7 +1,74 @@
-timestep_minutes: 10
+# Geospatial Sensor Digital Twin — configuration
+# All values in SI units (metres, seconds, kg) unless noted.
+
+# ---------------------------------------------------------------------------
+# EKF state estimator  [planned Phase 3 — state_estimator.py]
+# State vector: [east, north, vx, vz, ax, az]
+# ---------------------------------------------------------------------------
+ekf:
+  # Process noise covariance Q (diagonal entries)
+  process_noise_pos:   0.01    # (m²)      position random-walk variance
+  process_noise_vel:   0.10    # ((m/s)²)  velocity random-walk variance
+  process_noise_acc:   1.00    # ((m/s²)²) acceleration random-walk variance
+
+  # Measurement noise covariance R
+  measurement_noise_gps_pos: 4.0    # (m²)      GPS position noise ≈ 2 m CEP
+  measurement_noise_gps_vel: 0.05   # ((m/s)²)  GPS speed noise
+
+  # Mahalanobis-distance outlier gate
+  # Reject GPS update if innovation^T S^{-1} innovation > mahalanobis_gate²
+  mahalanobis_gate: 3.0
+
+# ---------------------------------------------------------------------------
+# Physics dynamics model  [physics_validator.py]
+# ---------------------------------------------------------------------------
 physics:
-  storage_coef: 0.8
-  runoff_coef: 0.3
-ml:
-  transfer_epochs: 5
-  meta_iters: 2
+  # Drifter physical parameters
+  mass_kg:      1.5     # estimated total mass of buoy
+  radius_m:     0.15    # half-diameter of cylindrical housing
+  height_m:     0.30    # cylinder height
+  Cd:           0.82    # drag coefficient (cylinder)
+  rho_water:    1000.0  # freshwater density (kg/m³)
+
+  # River current estimation
+  n_current_samples: 20    # number of early GPS samples used to estimate bulk flow
+  min_speed_ms:      0.10  # GPS speed threshold below which sample is ignored
+
+# ---------------------------------------------------------------------------
+# Noise characterisation and outlier rejection  [data_loader.py + state_estimator.py]
+# ---------------------------------------------------------------------------
+noise:
+  gps_dropout_threshold:   1.0e-6  # |Lat| + |Lon| below this → treat as dropout (degrees)
+  segment_jump_threshold_s: 1.0    # backward jump in millis() larger than this → new segment
+  imu_gravity_axis: z              # sensor axis carrying ~−g at rest
+  accel_clip_ms2:   30.0           # clip IMU accel magnitudes above this (noise spike rejection)
+
+# ---------------------------------------------------------------------------
+# Metrics and evaluation  [planned Phase 4 — metrics.py]
+# ---------------------------------------------------------------------------
+metrics:
+  rmse_report:               true
+  velocity_error_report:     true
+  acceleration_residual_report: true
+  drift_divergence_report:   true
+  filter_improvement_report: true   # RMSE(EKF) / RMSE(raw GPS) ratio
+  output_csv:                data/metrics.csv
+
+# ---------------------------------------------------------------------------
+# Path curvature analysis  [planned Phase 4]
+# κ = |v × a| / |v|³   (2-D: κ = |vx·az − vz·ax| / (vx²+vz²)^(3/2))
+# ---------------------------------------------------------------------------
+curvature:
+  min_speed_ms: 0.05   # ignore curvature when speed is near zero (numerical stability)
+  high_curvature_threshold: 0.5   # (1/m) — segments above this flagged as rapids / eddies
+
+# ---------------------------------------------------------------------------
+# USD visualisation
+# ---------------------------------------------------------------------------
+visualization:
+  fps:                24.0
+  default_speed_scale: 1.0
+  arrow_scale_vel:    0.5    # arrow length per (m/s)
+  arrow_scale_acc:    0.1    # arrow length per (m/s²)
+  bob_amplitude_m:    0.05   # ± vertical bobbing amplitude
+  bob_freq_hz:        0.8    # bobbing oscillation frequency
