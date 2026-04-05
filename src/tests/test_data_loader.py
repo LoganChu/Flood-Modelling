@@ -15,7 +15,7 @@ _EXT_ROOT = Path(__file__).resolve().parent.parent
 if str(_EXT_ROOT) not in sys.path:
     sys.path.insert(0, str(_EXT_ROOT))
 
-from duke.flood_modelling.drifter_vis.data_loader import (
+from drifter_vis.data_loader import (
     DataLoadError,
     DrifterDataLoader,
     REQUIRED_COLUMNS,

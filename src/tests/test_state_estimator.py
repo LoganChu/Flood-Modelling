@@ -25,7 +25,7 @@ _EXT_ROOT = Path(__file__).resolve().parent.parent
 if str(_EXT_ROOT) not in sys.path:
     sys.path.insert(0, str(_EXT_ROOT))
 
-from duke.flood_modelling.drifter_vis.state_estimator import (
+from drifter_vis.state_estimator import (
     EKFConfig,
     StateEstimator,
     _EKFState,
@@ -460,8 +460,8 @@ class TestRealCSVIntegration:
             pytest.skip("Real CSV not available")
 
         # Import the full pipeline (data_loader, geo_converter) from the same package
-        from duke.flood_modelling.drifter_vis.data_loader import DrifterDataLoader
-        from duke.flood_modelling.drifter_vis.geo_converter import GeoConverter
+        from drifter_vis.data_loader import DrifterDataLoader
+        from drifter_vis.geo_converter import GeoConverter
 
         loader = DrifterDataLoader()
         df = loader.load(REAL_CSV)
@@ -491,8 +491,8 @@ class TestRealCSVIntegration:
         inter-segment jumps at millis() resets contaminating the metric.
         """
         df, ekf_df, _ = ekf_result
-        from duke.flood_modelling.drifter_vis.geo_converter import GeoConverter
-        from duke.flood_modelling.drifter_vis.data_loader import DrifterDataLoader
+        from drifter_vis.geo_converter import GeoConverter
+        from drifter_vis.data_loader import DrifterDataLoader
         loader = DrifterDataLoader()
         df2 = loader.load(REAL_CSV)
         geo = GeoConverter().convert(df2)

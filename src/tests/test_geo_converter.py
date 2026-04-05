@@ -15,8 +15,8 @@ _EXT_ROOT = Path(__file__).resolve().parent.parent
 if str(_EXT_ROOT) not in sys.path:
     sys.path.insert(0, str(_EXT_ROOT))
 
-from duke.flood_modelling.drifter_vis.geo_converter import GeoConverter, GeoResult
-from duke.flood_modelling.drifter_vis.data_loader import DrifterDataLoader
+from drifter_vis.geo_converter import GeoConverter, GeoResult
+from drifter_vis.data_loader import DrifterDataLoader
 
 REAL_CSV = Path(__file__).resolve().parents[4] / "data" / "enoFeb16th.csv"
 

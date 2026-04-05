@@ -363,9 +363,11 @@ class DrifterMetrics:
         """
         if len(x_filt) < 3:
             return 0.0
-        # 3-point centred moving average (edges use edge values)
-        x_ma = np.convolve(x_filt, np.ones(3) / 3.0, mode="same")
-        y_ma = np.convolve(y_filt, np.ones(3) / 3.0, mode="same")
+        # 3-point centred moving average with edge padding so perfectly linear
+        # paths stay near-zero instead of being penalized by zero-padding.
+        kernel = np.ones(3, dtype=float) / 3.0
+        x_ma = np.convolve(np.pad(x_filt, 1, mode="edge"), kernel, mode="valid")
+        y_ma = np.convolve(np.pad(y_filt, 1, mode="edge"), kernel, mode="valid")
         return float(np.sqrt(np.mean((x_filt - x_ma) ** 2 + (y_filt - y_ma) ** 2)))
 
     @staticmethod

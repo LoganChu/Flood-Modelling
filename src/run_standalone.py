@@ -47,13 +47,13 @@ logging.basicConfig(
 log = logging.getLogger("run_standalone")
 
 # ---------------------------------------------------------------------------
-# Add the extension package root to sys.path so imports work regardless of cwd
+# Add the source root to sys.path so imports work regardless of cwd
 # ---------------------------------------------------------------------------
 _SCRIPT_DIR = Path(__file__).resolve().parent          # src/
-_EXT_ROOT   = _SCRIPT_DIR / "exts" / "duke.flood_modelling.drifter_vis"
+_SRC_ROOT   = _SCRIPT_DIR
 
-if str(_EXT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_EXT_ROOT))
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
 
 _DEFAULT_CSV = str(_SCRIPT_DIR.parent / "data" / "enoFeb16th_smoothed.csv")
 
@@ -99,7 +99,7 @@ def run(
     Can be called directly from the Isaac Sim Script Editor without argparse::
 
         import sys
-        sys.path.insert(0, "/work/lc478/Flood-Modelling/src/exts/duke.flood_modelling.drifter_vis")
+        sys.path.insert(0, "/work/lc478/Flood-Modelling/src")
         from run_standalone import run
         run()
 
@@ -112,13 +112,13 @@ def run(
     live_mode    : per-frame callback instead of pre-baking (slower)
     show_ui      : create the omni.ui control panel
     """
-    from duke.flood_modelling.drifter_vis.utils import check_dependencies
-    from duke.flood_modelling.drifter_vis.data_loader import DrifterDataLoader
-    from duke.flood_modelling.drifter_vis.geo_converter import GeoConverter
-    from duke.flood_modelling.drifter_vis.scene_builder import SceneBuilder
-    from duke.flood_modelling.drifter_vis.animator import Animator
-    from duke.flood_modelling.drifter_vis.camera_manager import CameraManager, CameraMode
-    from duke.flood_modelling.drifter_vis.physics_validator import (
+    from drifter_vis.utils import check_dependencies
+    from drifter_vis.data_loader import DrifterDataLoader
+    from drifter_vis.geo_converter import GeoConverter
+    from drifter_vis.scene_builder import SceneBuilder
+    from drifter_vis.animator import Animator
+    from drifter_vis.camera_manager import CameraManager, CameraMode
+    from drifter_vis.physics_validator import (
         PhysicsValidator, DrifterPhysicsParams,
     )
 
@@ -235,7 +235,7 @@ def run(
     # -----------------------------------------------------------------------
     if show_ui:
         try:
-            from duke.flood_modelling.drifter_vis.ui_panel import DrifterUIPanel
+            from drifter_vis.ui_panel import DrifterUIPanel
             import omni.timeline as _tl
 
             panel = DrifterUIPanel(

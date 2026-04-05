@@ -25,7 +25,7 @@ _EXT_ROOT = Path(__file__).resolve().parent.parent
 if str(_EXT_ROOT) not in sys.path:
     sys.path.insert(0, str(_EXT_ROOT))
 
-from duke.flood_modelling.drifter_vis.metrics import (
+from drifter_vis.metrics import (
     DrifterMetrics,
     MetricsConfig,
     MetricsResult,
@@ -512,10 +512,10 @@ class TestRealCSVIntegration:
         if not REAL_CSV.exists():
             pytest.skip("Real CSV not available")
 
-        from duke.flood_modelling.drifter_vis.data_loader import DrifterDataLoader
-        from duke.flood_modelling.drifter_vis.geo_converter import GeoConverter
-        from duke.flood_modelling.drifter_vis.state_estimator import StateEstimator
-        from duke.flood_modelling.drifter_vis.physics_validator import PhysicsValidator
+        from drifter_vis.data_loader import DrifterDataLoader
+        from drifter_vis.geo_converter import GeoConverter
+        from drifter_vis.state_estimator import StateEstimator
+        from drifter_vis.physics_validator import PhysicsValidator
 
         df = DrifterDataLoader().load(REAL_CSV)
         geo = GeoConverter().convert(df)
