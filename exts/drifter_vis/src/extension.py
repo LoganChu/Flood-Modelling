@@ -49,7 +49,7 @@ from .ui_panel         import DrifterUIPanel
 from .utils            import USD_STAGE_FPS, check_dependencies
 
 _DEFAULT_CSV = str(
-    Path(__file__).resolve().parents[6] / "data" / "enoFeb16th_smoothed.csv"
+    Path(__file__).resolve().parents[2] / "data" / "enoFeb16th_smoothed.csv"
 )
 
 

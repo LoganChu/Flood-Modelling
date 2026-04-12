@@ -1,5 +1,6 @@
 [package]
 version      = "1.0.0"
+name         = "drifter_vis"
 title        = "River Drifter Visualisation"
 description  = "Kinematic replay and Newton validation of a GPS/IMU river drifter in Isaac Sim"
 category     = "Simulation"
@@ -14,16 +15,20 @@ kit = true
 "omni.usd"                = {}
 "omni.timeline"           = {}
 "omni.physx"              = {}
-"omni.isaac.debug_draw"   = {}
+# Debug draw is optional for Isaac Sim 5.1 — gracefully disabled if unavailable
+# "omni.isaac.debug_draw"   = {}
 
 # Cesium is optional — the extension falls back gracefully if absent
 # "cesium.omniverse"      = {}
 
+[python]
+path = "."
+
 [[python.module]]
-name = "duke.flood_modelling.drifter_vis"
+name = "src"
 
 [settings]
 # Default CSV path relative to the repo root (overridden via UI file picker)
-exts."duke.flood_modelling.drifter_vis".default_csv = "data/enoFeb16th_smoothed.csv"
-exts."duke.flood_modelling.drifter_vis".fps          = 24.0
-exts."duke.flood_modelling.drifter_vis".prebake_mode = true
+exts.default_csv = "data/enoFeb16th_smoothed.csv"
+exts.fps          = 24.0
+exts.prebake_mode = true

@@ -47,15 +47,15 @@ logging.basicConfig(
 log = logging.getLogger("run_standalone")
 
 # ---------------------------------------------------------------------------
-# Add the source root to sys.path so imports work regardless of cwd
+# Add the exts root to sys.path so imports work regardless of cwd
 # ---------------------------------------------------------------------------
-_SCRIPT_DIR = Path(__file__).resolve().parent          # src/
-_SRC_ROOT   = _SCRIPT_DIR
+_SCRIPT_DIR = Path(__file__).resolve().parent          # Flood-Modelling/
+_EXTS_ROOT   = _SCRIPT_DIR / "exts"
 
-if str(_SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(_SRC_ROOT))
+if str(_EXTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(_EXTS_ROOT))
 
-_DEFAULT_CSV = str(_SCRIPT_DIR.parent / "data" / "enoFeb16th_smoothed.csv")
+_DEFAULT_CSV = str(_SCRIPT_DIR / "data" / "enoFeb16th_smoothed.csv")
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k:v for k,v in d.items\\(\\) if k not in ['hooks']}, indent=2\\)\\)\")",
+      "Bash(node:*)",
+      "Bash(mv ~/.claude/rules/common ~/.claude/rules/common.disabled)",
+      "Bash(mv ~/.claude/agents ~/.claude/agents.disabled)",
+      "Bash(pip install:*)",
+      "Bash(python -m pip install plotly --quiet)",
+      "Bash(python src/visualize_trajectory.py --csv data/enoFeb16th.csv)",
+      "Bash(python3:*)",
+      "Bash(python:*)",
+      "Bash(ls -1 *.png *.html)",
+      "Bash(ls -1 *.png)"
+    ]
+  }
+}
