@@ -167,9 +167,15 @@ class TerrainDraper:
 
         # On first drape pass, attempt to enable terrain colliders (Cesium tiles may now exist)
         if self._pass_count == 0 and self._builder and not self._colliders_enabled:
+            log.debug("TerrainDraper: attempting to enable terrain colliders...")
             if self._builder.enable_terrain_colliders():
                 self._colliders_enabled = True
-                log.debug("TerrainDraper: terrain colliders enabled")
+                log.info("TerrainDraper: terrain colliders ENABLED successfully")
+            else:
+                log.warning("TerrainDraper: enable_terrain_colliders() returned False (prim may not exist)")
+        elif self._pass_count == 0:
+            log.debug("TerrainDraper: skipping collider init (builder=%s, colliders_enabled=%s)",
+                     self._builder is not None, self._colliders_enabled)
 
         # Query terrain heights
         heights = self.query_terrain_heights()
@@ -181,14 +187,18 @@ class TerrainDraper:
             heights, self._last_heights, atol=0.01
         ):
             self._pass_count += 1
-            log.debug(
-                "TerrainDraper: heights unchanged at pass %d (tiles stable?)",
+            log.info(
+                "TerrainDraper: heights unchanged at pass %d, skipping apply (tiles stable)",
                 self._pass_count,
             )
             return
 
         # Heights differ — drape the curves and animator
         self._last_heights = heights.copy()
+        log.info(
+            "TerrainDraper: pass %d — heights changed, applying to curves/animator",
+            self._pass_count + 1,
+        )
 
         try:
             stage = omni.usd.get_context().get_stage()
@@ -198,6 +208,7 @@ class TerrainDraper:
             log.info("TerrainDraper: drape pass %d complete", self._pass_count)
         except Exception as exc:
             log.error("TerrainDraper: drape pass failed: %s", exc, exc_info=True)
+            self._pass_count += 1
 
     # ------------------------------------------------------------------
     # Height query via PhysX raycasting
@@ -218,6 +229,8 @@ class TerrainDraper:
         n = len(self._east_arr)
         heights = np.zeros(n, dtype=float)
         miss_count = 0
+        hit_count = 0
+        height_samples = []
 
         for i in range(n):
             east = float(self._east_arr[i])
@@ -231,6 +244,10 @@ class TerrainDraper:
                 )
                 if hit["hit"]:
                     heights[i] = float(hit["position"][1])
+                    hit_count += 1
+                    # Sample first few hit heights for logging
+                    if i < 5 or i == n - 1:
+                        height_samples.append(f"pt{i}={heights[i]:.2f}")
                 else:
                     heights[i] = 0.0
                     miss_count += 1
@@ -250,6 +267,13 @@ class TerrainDraper:
                 "TerrainDraper: %d/%d raycast misses (tiles not yet fully loaded)",
                 miss_count,
                 n,
+            )
+        else:
+            log.info(
+                "TerrainDraper: %d/%d raycasts HIT — heights sample: %s",
+                hit_count,
+                n,
+                ", ".join(height_samples),
             )
         return heights
 

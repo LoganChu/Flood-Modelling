@@ -199,8 +199,8 @@ class SceneBuilder:
         """
         Check if Cesium prims are already set up in the scene.
 
-        If Cesium World Terrain exists, use it. Otherwise, fall back to water plane
-        and log instructions for manual setup.
+        If Cesium World Terrain exists, validate/set its georeference. Otherwise,
+        fall back to water plane and log instructions for manual setup.
         """
         from .utils import CESIUM_TERRAIN_PATH
 
@@ -208,19 +208,54 @@ class SceneBuilder:
         cesium_prim = stage.GetPrimAtPath(CESIUM_TERRAIN_PATH)
         if cesium_prim.IsValid():
             log.info("Cesium World Terrain found at %s — using terrain", CESIUM_TERRAIN_PATH)
+            # Try to set/validate Cesium Georeference
+            self._sync_cesium_georeference(stage)
             return  # Don't build water plane; use existing Cesium
 
         # Cesium not set up yet; log instructions and fall back
         log.info(
-            "Cesium is installed but terrain not yet in scene. To enable:\n"
-            "  1. Window → Cesium for Omniverse → Add Georeference\n"
-            "  2. Set origin: lat=%.5f, lon=%.5f, height=%.1f\n"
-            "  3. Add Cesium World Terrain (Asset ID 1)\n"
-            "  4. Add Bing Maps Satellite (Asset ID 2)\n"
-            "  Using flat water plane for now.",
+            "Cesium is installed but terrain not yet in scene. "
+            "lat=%.5f, lon=%.5f, height=%.1f",
             self._origin_lat, self._origin_lon, self._origin_alt
         )
         self._build_water_plane(stage)
+
+    def _sync_cesium_georeference(self, stage) -> None:
+        """
+        Set Cesium Georeference to match the CSV data's origin (lat/lon/alt).
+
+        This ensures the drifter trajectory aligns with Cesium terrain tiles.
+        """
+        try:
+            cesium_georef_path = "/CesiumGeoreference"
+            georef_prim = stage.GetPrimAtPath(cesium_georef_path)
+            if not georef_prim.IsValid():
+                log.debug("Cesium Georeference not found at %s", cesium_georef_path)
+                return
+
+            # Set latitude, longitude, height to match CSV origin
+            lat_attr = georef_prim.GetAttribute("cesium:latitude")
+            lon_attr = georef_prim.GetAttribute("cesium:longitude")
+            height_attr = georef_prim.GetAttribute("cesium:height")
+
+            log.debug("Cesium attributes found: lat=%s, lon=%s, height=%s", lat_attr, lon_attr, height_attr)
+
+            if lat_attr:
+                log.debug("Setting cesium:latitude to %.5f", self._origin_lat)
+                lat_attr.Set(self._origin_lat)
+            if lon_attr:
+                log.debug("Setting cesium:longitude to %.5f", self._origin_lon)
+                lon_attr.Set(self._origin_lon)
+            if height_attr:
+                log.debug("Setting cesium:height to %.1f", self._origin_alt)
+                height_attr.Set(self._origin_alt)
+
+            log.info(
+                "Cesium Georeference synced: lat=%.5f, lon=%.5f, height=%.1f",
+                self._origin_lat, self._origin_lon, self._origin_alt
+            )
+        except Exception as exc:
+            log.warning("Failed to sync Cesium Georeference: %s", exc)
 
     def _build_water_plane(self, stage) -> None:
         """Flat 500×500 m water plane as Cesium fallback."""
@@ -369,6 +404,12 @@ class SceneBuilder:
         Chase and Onboard cameras follow the drifter's path without rotating,
         maintaining a fixed horizontal orientation at all times.
         """
+        # Remove existing camera prims if rebuilding scene
+        for cam_path in [f"{CAMERAS_PATH}/OverviewCamera", f"{CAMERAS_PATH}/ChaseCamera", f"{CAMERAS_PATH}/OnboardCamera"]:
+            existing = stage.GetPrimAtPath(cam_path)
+            if existing.IsValid():
+                stage.RemovePrim(cam_path)
+
         # Overview camera (fixed, at path centroid)
         cx = float(east_arr.mean())
         cy = 0.0

@@ -36,7 +36,7 @@ TERRAIN_ABOVE_OFFSET_M: float     = 0.05     # lift above hit surface (m)
 TERRAIN_DRAPE_WARMUP_FRAMES: int  = 120      # frames before first drape (~2s at 60fps)
 TERRAIN_DRAPE_UPDATE_INTERVAL: int = 300     # frames between re-drape passes
 TERRAIN_DRAPE_MAX_PASSES: int     = 3        # stop after this many passes
-CESIUM_TERRAIN_PATH: str = "/World/Cesium/CesiumWorldTerrain"
+CESIUM_TERRAIN_PATH: str = "/Cesium_World_Terrain"
 
 # ---------------------------------------------------------------------------
 # Drifter bobbing
@@ -53,7 +53,7 @@ COLOUR_PHYSICS: Tuple[float, float, float] = (1.0, 0.6, 0.1)     # orange
 
 # USD prim paths (canonical)
 WORLD_PATH = "/World"
-CESIUM_PATH = "/World/Cesium"
+CESIUM_PATH = "/Cesium_World_Terrain"
 RIVER_PATH = "/World/River"
 DRIFTER_PATH = "/World/Drifter"
 DRIFTER_XFORM_PATH = "/World/Drifter/DrifterXform"
