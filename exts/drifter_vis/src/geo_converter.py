@@ -140,9 +140,12 @@ class GeoConverter:
             2.0 * math.pi * self.BOB_FREQ_HZ * time_s
         )
 
-        # 4. USD stage: East→X, (Up+bob)→Y, North→Z
+        # 4. USD stage: East→X, (flat)→Y, North→Z
+        # Note: usd_y is now flat (Y=0); terrain height will be drape onto trajectories
+        # via TerrainDraper if Cesium is available. bob_y is preserved in GeoResult
+        # for the draper to restore bobbing onto the drifter animation.
         usd_x = east.copy()
-        usd_y = up + bob_y
+        usd_y = np.zeros_like(east)
         usd_z = north.copy()
 
         return GeoResult(

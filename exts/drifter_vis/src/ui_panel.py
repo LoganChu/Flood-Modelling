@@ -139,7 +139,7 @@ class DrifterUIPanel:
     def set_total_frames(self, n: int) -> None:
         self._total_frames = n
         if self._frame_slider and _UI_AVAILABLE:
-            self._frame_slider.max = float(max(1, n - 1))
+            self._frame_slider.max = int(max(1, n - 1))
         if self._frame_label:
             self._frame_label.text = f"0 / {n}"
 

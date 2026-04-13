@@ -13,8 +13,7 @@ USD stage structure:
         TrajectoryPhysics    (BasisCurves — discrepancy colour, optional)
       /Drifter
         DrifterXform         (animated Xform)
-          DrifterMesh        (Cylinder primitive)
-          WakeParticles      (OmniParticles emitter, if available)
+          DrifterMesh        (Sphere primitive)
           ChaseCamera
           OnboardCamera
       /Cameras
@@ -74,9 +73,8 @@ class SceneBuilder:
     TRAJECTORY_PATH = TRAJECTORY_PATH
     TRAJECTORY_PHYSICS_PATH = TRAJECTORY_PHYSICS_PATH
 
-    # Drifter geometry
-    BUOY_RADIUS_M: float = 0.15
-    BUOY_HEIGHT_M: float = 0.30
+    # Drifter geometry (sphere)
+    BUOY_RADIUS_M: float = 0.08
 
     def __init__(
         self,
@@ -98,7 +96,6 @@ class SceneBuilder:
         self,
         east_arr: np.ndarray,
         north_arr: np.ndarray,
-        up_arr: np.ndarray,
         speeds: np.ndarray,
         physics_east: Optional[np.ndarray] = None,
         physics_north: Optional[np.ndarray] = None,
@@ -111,11 +108,14 @@ class SceneBuilder:
 
         Parameters
         ----------
-        east_arr, north_arr, up_arr : ENU coordinates (metres), arrays of shape (N,)
+        east_arr, north_arr : ENU coordinates (metres), arrays of shape (N,)
         speeds          : speed_ms values, array of shape (N,), used for trajectory colour
         physics_east/north : optional simulated ENU coordinates for physics trajectory
         discrepancy     : optional metres-error array for physics trajectory colour
         ekf_east/north  : optional EKF-filtered ENU positions for the EKF overlay
+
+        Note: All trajectories are initially flat at Y=0. Terrain height draping
+        is applied asynchronously via TerrainDraper after tiles load.
         """
         if not _USD_AVAILABLE:
             log.warning("USD not available — SceneBuilder.build() is a no-op")
@@ -132,18 +132,21 @@ class SceneBuilder:
         self._build_world_xform(stage)
         self._build_lighting(stage)
         self._build_terrain(stage)
-        self._build_trajectory(stage, east_arr, north_arr, up_arr, speeds)
+        self._build_trajectory(stage, east_arr, north_arr, speeds)
         self._build_drifter(stage)
-        self._build_cameras(stage, east_arr, north_arr, up_arr)
+        self._build_cameras(stage, east_arr, north_arr)
 
         if physics_east is not None and discrepancy is not None:
             self._build_physics_trajectory(
                 stage, physics_east, physics_north or np.zeros_like(physics_east),
-                up_arr, discrepancy
+                discrepancy
             )
 
         if ekf_east is not None and ekf_north is not None:
-            self._build_ekf_trajectory(stage, ekf_east, ekf_north, up_arr)
+            self._build_ekf_trajectory(stage, ekf_east, ekf_north)
+
+        # Enable physics colliders on Cesium terrain (if present) for TerrainDraper raycasting
+        self._enable_terrain_colliders(stage)
 
         log.info("USD scene build complete.")
 
@@ -157,6 +160,12 @@ class SceneBuilder:
 
     def _build_lighting(self, stage) -> None:
         lighting_path = LIGHTING_PATH
+
+        # Check if lighting already exists (skip if rebuilding scene)
+        existing_dome = stage.GetPrimAtPath(f"{lighting_path}/SkyDome")
+        if existing_dome.IsValid():
+            log.debug("Lighting already exists, skipping rebuild")
+            return
 
         # Sky dome (environment light)
         dome_path = f"{lighting_path}/SkyDome"
@@ -188,39 +197,30 @@ class SceneBuilder:
 
     def _build_cesium_terrain(self, stage) -> None:
         """
-        Add Cesium georeferenced terrain and satellite imagery.
+        Check if Cesium prims are already set up in the scene.
 
-        Requires the cesium.omniverse Kit extension to be enabled.
-        Ion assets used:
-          1   — Cesium World Terrain
-          2   — Bing Maps Aerial imagery
+        If Cesium World Terrain exists, use it. Otherwise, fall back to water plane
+        and log instructions for manual setup.
         """
-        try:
-            import cesium.omniverse  # noqa: F401
-            from cesium.omniverse.utils.usd_utils import add_cesium_georeference
+        from .utils import CESIUM_TERRAIN_PATH
 
-            # Georeference prim
-            geo_path = f"{CESIUM_PATH}/CesiumGeoreference"
-            georef = stage.DefinePrim(geo_path, "CesiumGeoreference")
-            georef.GetAttribute("cesium:georeferenceOrigin:latitude").Set(self._origin_lat)
-            georef.GetAttribute("cesium:georeferenceOrigin:longitude").Set(self._origin_lon)
-            georef.GetAttribute("cesium:georeferenceOrigin:height").Set(self._origin_alt)
+        # Check if Cesium terrain was manually added to the scene
+        cesium_prim = stage.GetPrimAtPath(CESIUM_TERRAIN_PATH)
+        if cesium_prim.IsValid():
+            log.info("Cesium World Terrain found at %s — using terrain", CESIUM_TERRAIN_PATH)
+            return  # Don't build water plane; use existing Cesium
 
-            # Terrain tileset
-            terrain_path = f"{CESIUM_PATH}/CesiumWorldTerrain"
-            terrain = stage.DefinePrim(terrain_path, "CesiumTileset")
-            terrain.GetAttribute("cesium:ionAssetId").Set(1)
-            terrain.GetAttribute("cesium:maximumScreenSpaceError").Set(8.0)
-
-            # Imagery overlay
-            imagery_path = f"{CESIUM_PATH}/BingMapsSatellite"
-            imagery = stage.DefinePrim(imagery_path, "CesiumIonRasterOverlay")
-            imagery.GetAttribute("cesium:ionAssetId").Set(2)
-
-            log.info("Cesium terrain configured (origin %.5f, %.5f)", self._origin_lat, self._origin_lon)
-        except Exception as exc:
-            log.warning("Cesium setup failed (%s) — falling back to water plane", exc)
-            self._build_water_plane(stage)
+        # Cesium not set up yet; log instructions and fall back
+        log.info(
+            "Cesium is installed but terrain not yet in scene. To enable:\n"
+            "  1. Window → Cesium for Omniverse → Add Georeference\n"
+            "  2. Set origin: lat=%.5f, lon=%.5f, height=%.1f\n"
+            "  3. Add Cesium World Terrain (Asset ID 1)\n"
+            "  4. Add Bing Maps Satellite (Asset ID 2)\n"
+            "  Using flat water plane for now.",
+            self._origin_lat, self._origin_lon, self._origin_alt
+        )
+        self._build_water_plane(stage)
 
     def _build_water_plane(self, stage) -> None:
         """Flat 500×500 m water plane as Cesium fallback."""
@@ -256,7 +256,6 @@ class SceneBuilder:
         stage,
         east_arr: np.ndarray,
         north_arr: np.ndarray,
-        up_arr: np.ndarray,
         speeds: np.ndarray,
     ) -> None:
         """
@@ -264,13 +263,17 @@ class SceneBuilder:
 
         The full recorded path is baked as a single linear curves prim with
         per-vertex displayColor — one GPU draw call, no per-frame cost.
+
+        All points are initially flat at Y=0. Terrain height is drape via
+        TerrainDraper after tiles load.
         """
         traj = UsdGeom.BasisCurves.Define(stage, TRAJECTORY_PATH)
         traj.GetTypeAttr().Set(UsdGeom.Tokens.linear)
 
-        # Points: (east→X, up→Y, north→Z)
-        pts = [Gf.Vec3f(float(e), float(u), float(n))
-               for e, u, n in zip(east_arr, up_arr, north_arr)]
+        # Points: (east→X, 0.0→Y, north→Z)
+        # Y is flat initially; TerrainDraper will update with terrain heights
+        pts = [Gf.Vec3f(float(e), 0.0, float(n))
+               for e, n in zip(east_arr, north_arr)]
         traj.GetPointsAttr().Set(Vt.Vec3fArray(pts))
         traj.GetCurveVertexCountsAttr().Set(Vt.IntArray([len(pts)]))
 
@@ -287,15 +290,18 @@ class SceneBuilder:
         stage,
         east_arr: np.ndarray,
         north_arr: np.ndarray,
-        up_arr: np.ndarray,
         discrepancy: np.ndarray,
     ) -> None:
-        """Optional physics comparison trajectory, coloured by discrepancy."""
+        """Optional physics comparison trajectory, coloured by discrepancy.
+
+        Positioned 0.3 m above the GPS trajectory for visual separation.
+        Y values are initially at 0.3; TerrainDraper will update to terrain + 0.3.
+        """
         traj = UsdGeom.BasisCurves.Define(stage, TRAJECTORY_PHYSICS_PATH)
         traj.GetTypeAttr().Set(UsdGeom.Tokens.linear)
 
-        pts = [Gf.Vec3f(float(e), float(u) + 0.3, float(n))
-               for e, u, n in zip(east_arr, up_arr, north_arr)]  # offset +0.3m Y
+        pts = [Gf.Vec3f(float(e), 0.3, float(n))
+               for e, n in zip(east_arr, north_arr)]  # offset +0.3m Y
         traj.GetPointsAttr().Set(Vt.Vec3fArray(pts))
         traj.GetCurveVertexCountsAttr().Set(Vt.IntArray([len(pts)]))
 
@@ -310,14 +316,17 @@ class SceneBuilder:
         stage,
         east_arr: np.ndarray,
         north_arr: np.ndarray,
-        up_arr: np.ndarray,
     ) -> None:
-        """EKF-filtered trajectory overlay, constant green, offset +0.6 m Y."""
+        """EKF-filtered trajectory overlay, constant green, offset +0.6 m Y.
+
+        Positioned 0.6 m above the GPS trajectory for visual separation.
+        Y values are initially at 0.6; TerrainDraper will update to terrain + 0.6.
+        """
         traj = UsdGeom.BasisCurves.Define(stage, TRAJECTORY_EKF_PATH)
         traj.GetTypeAttr().Set(UsdGeom.Tokens.linear)
 
-        pts = [Gf.Vec3f(float(e), float(u) + 0.6, float(n))
-               for e, u, n in zip(east_arr, up_arr, north_arr)]
+        pts = [Gf.Vec3f(float(e), 0.6, float(n))
+               for e, n in zip(east_arr, north_arr)]
         traj.GetPointsAttr().Set(Vt.Vec3fArray(pts))
         traj.GetCurveVertexCountsAttr().Set(Vt.IntArray([len(pts)]))
 
@@ -329,17 +338,15 @@ class SceneBuilder:
         log.debug("EKF trajectory created")
 
     def _build_drifter(self, stage) -> None:
-        """Create the drifter Xform hierarchy with cylinder mesh and cameras."""
+        """Create the drifter Xform hierarchy with sphere mesh (cameras now separate)."""
         # Root Xform (animated by Animator)
         xform_prim = stage.DefinePrim(DRIFTER_XFORM_PATH, "Xform")
         UsdGeom.Xform(xform_prim)
 
-        # Cylinder mesh
+        # Sphere mesh
         mesh_path = f"{DRIFTER_XFORM_PATH}/DrifterMesh"
-        cyl = UsdGeom.Cylinder.Define(stage, mesh_path)
-        cyl.GetRadiusAttr().Set(self.BUOY_RADIUS_M)
-        cyl.GetHeightAttr().Set(self.BUOY_HEIGHT_M)
-        cyl.GetAxisAttr().Set(UsdGeom.Tokens.y)
+        sphere = UsdGeom.Sphere.Define(stage, mesh_path)
+        sphere.GetRadiusAttr().Set(self.BUOY_RADIUS_M)
 
         # Orange buoy material
         mat_path = f"{mesh_path}/BuoyMaterial"
@@ -347,26 +354,7 @@ class SceneBuilder:
         shader.GetInput("diffuseColor").Set(Gf.Vec3f(0.9, 0.55, 0.1))
         shader.GetInput("roughness").Set(0.6)
         shader.GetInput("metallic").Set(0.05)
-        UsdShade.MaterialBindingAPI(cyl).Bind(mat)
-
-        # Chase camera (child of drifter — inherits animated transform)
-        chase_path = f"{DRIFTER_XFORM_PATH}/ChaseCamera"
-        chase_cam = UsdGeom.Camera.Define(stage, chase_path)
-        chase_xform = UsdGeom.Xformable(chase_cam.GetPrim())
-        # Offset: 5 m behind (+Z in local drifter space), 2 m up
-        chase_xform.AddTranslateOp().Set(Gf.Vec3d(0.0, 2.0, 5.0))
-        chase_xform.AddRotateXYZOp().Set(Gf.Vec3f(-15.0, 0.0, 0.0))
-        chase_cam.GetFocalLengthAttr().Set(24.0)
-        chase_cam.GetHorizontalApertureAttr().Set(36.0)
-
-        # Onboard POV camera
-        onboard_path = f"{DRIFTER_XFORM_PATH}/OnboardCamera"
-        onboard_cam = UsdGeom.Camera.Define(stage, onboard_path)
-        onboard_xform = UsdGeom.Xformable(onboard_cam.GetPrim())
-        onboard_xform.AddTranslateOp().Set(Gf.Vec3d(0.0, 0.3, 0.0))
-        onboard_xform.AddRotateXYZOp().Set(Gf.Vec3f(-5.0, 0.0, 0.0))
-        onboard_cam.GetFocalLengthAttr().Set(18.0)
-        onboard_cam.GetHorizontalApertureAttr().Set(36.0)
+        UsdShade.MaterialBindingAPI(sphere).Bind(mat)
 
         log.debug("Drifter prim hierarchy created")
 
@@ -375,11 +363,15 @@ class SceneBuilder:
         stage,
         east_arr: np.ndarray,
         north_arr: np.ndarray,
-        up_arr: np.ndarray,
     ) -> None:
-        """Create the orbital overview camera above the path centroid."""
+        """Create orbit and follow cameras above the path centroid.
+
+        Chase and Onboard cameras follow the drifter's path without rotating,
+        maintaining a fixed horizontal orientation at all times.
+        """
+        # Overview camera (fixed, at path centroid)
         cx = float(east_arr.mean())
-        cy = float(up_arr.mean())
+        cy = 0.0
         cz = float(north_arr.mean())
         extent = max(
             float(east_arr.max() - east_arr.min()),
@@ -393,11 +385,130 @@ class SceneBuilder:
         cam.GetHorizontalApertureAttr().Set(36.0)
 
         cam_xform = UsdGeom.Xformable(cam.GetPrim())
-        # Position above centroid, looking down
+        # Position above centroid, looking straight down at the path
+        # Use -90° X rotation (tip back) to look down at the ground plane below
         cam_xform.AddTranslateOp().Set(Gf.Vec3d(cx, cy + orbit_h, cz))
         cam_xform.AddRotateXYZOp().Set(Gf.Vec3f(-90.0, 0.0, 0.0))
 
         log.debug("Overview camera at (%.1f, %.1f, %.1f) h=%.1f", cx, cy, cz, orbit_h)
+
+        # Chase and Onboard cameras: follow drifter without rotating
+        self._build_follow_cameras(stage, east_arr, north_arr)
+
+    def _build_follow_cameras(
+        self,
+        stage,
+        east_arr: np.ndarray,
+        north_arr: np.ndarray,
+    ) -> None:
+        """Create Chase and Onboard cameras that follow the drifter without rotating.
+
+        Cameras are positioned at each path point with time samples, maintaining
+        a fixed horizontal orientation throughout the animation.
+
+        Chase: 5m behind the drifter, 2m up, looking forward (unrotated).
+        Onboard: 0.3m above drifter, first-person view (unrotated).
+        """
+        n_points = len(east_arr)
+
+        # Compute path heading (direction of travel) at each point
+        headings = np.zeros(n_points, dtype=float)
+        for i in range(n_points - 1):
+            de = float(east_arr[i + 1] - east_arr[i])
+            dn = float(north_arr[i + 1] - north_arr[i])
+            heading = math.atan2(de, dn)  # radians: 0=north, π/2=east
+            headings[i] = heading
+        headings[-1] = headings[-2]  # repeat last heading at end
+
+        # Chase camera: 5m behind drifter, 2m up, always horizontal
+        chase_path = f"{CAMERAS_PATH}/ChaseCamera"
+        chase_cam = UsdGeom.Camera.Define(stage, chase_path)
+        chase_cam.GetFocalLengthAttr().Set(24.0)
+        chase_cam.GetHorizontalApertureAttr().Set(36.0)
+
+        chase_xform = UsdGeom.Xformable(chase_cam.GetPrim())
+        chase_trans_op = chase_xform.AddTranslateOp()
+        chase_rot_op = chase_xform.AddRotateXYZOp()
+
+        for i in range(n_points):
+            e = float(east_arr[i])
+            n = float(north_arr[i])
+            heading = float(headings[i])
+
+            # Offset: 5m backward along the heading direction
+            chase_e = e - 5.0 * math.sin(heading)
+            chase_n = n - 5.0 * math.cos(heading)
+            chase_y = 2.0
+
+            time_code = Usd.TimeCode(i)
+            chase_trans_op.Set(Gf.Vec3d(chase_e, chase_y, chase_n), time_code)
+            chase_rot_op.Set(Gf.Vec3f(0.0, 0.0, 0.0), time_code)  # Horizontal
+
+        # Onboard camera: 0.3m above drifter, always horizontal
+        onboard_path = f"{CAMERAS_PATH}/OnboardCamera"
+        onboard_cam = UsdGeom.Camera.Define(stage, onboard_path)
+        onboard_cam.GetFocalLengthAttr().Set(18.0)
+        onboard_cam.GetHorizontalApertureAttr().Set(36.0)
+
+        onboard_xform = UsdGeom.Xformable(onboard_cam.GetPrim())
+        onboard_trans_op = onboard_xform.AddTranslateOp()
+        onboard_rot_op = onboard_xform.AddRotateXYZOp()
+
+        for i in range(n_points):
+            e = float(east_arr[i])
+            n = float(north_arr[i])
+
+            time_code = Usd.TimeCode(i)
+            onboard_trans_op.Set(Gf.Vec3d(e, 0.3, n), time_code)
+            onboard_rot_op.Set(Gf.Vec3f(0.0, 0.0, 0.0), time_code)  # Horizontal
+
+        log.debug("Chase and Onboard cameras created with %d time samples", n_points)
+
+    # ------------------------------------------------------------------
+    # Terrain colliders (for TerrainDraper raycasting)
+    # ------------------------------------------------------------------
+
+    def _enable_terrain_colliders(self, stage) -> bool:
+        """
+        Apply UsdPhysics.CollisionAPI to the CesiumWorldTerrain prim if it exists.
+
+        Also sets cesium:enableFrustumCulling = false so the tile loader
+        fetches the full tileset footprint regardless of viewport frustum.
+
+        Returns True if the prim was found and APIs applied, False otherwise.
+        """
+        if not _USD_AVAILABLE:
+            return False
+
+        from .utils import CESIUM_TERRAIN_PATH
+        prim = stage.GetPrimAtPath(CESIUM_TERRAIN_PATH)
+        if not prim.IsValid():
+            log.debug("CesiumWorldTerrain prim not yet present at %s", CESIUM_TERRAIN_PATH)
+            return False
+
+        # Apply collision API
+        if not UsdPhysics.CollisionAPI(prim):
+            UsdPhysics.CollisionAPI.Apply(prim)
+            log.info("Applied UsdPhysics.CollisionAPI to %s", CESIUM_TERRAIN_PATH)
+
+        # Disable frustum culling so tiles load outside the viewport frustum
+        frustum_attr = prim.GetAttribute("cesium:enableFrustumCulling")
+        if not frustum_attr:
+            frustum_attr = prim.CreateAttribute(
+                "cesium:enableFrustumCulling",
+                Sdf.ValueTypeNames.Bool,
+                custom=True
+            )
+        frustum_attr.Set(False)
+
+        log.info("Cesium terrain physics colliders enabled at %s", CESIUM_TERRAIN_PATH)
+        return True
+
+    def enable_terrain_colliders(self) -> bool:
+        """Public accessor — re-applies collision API after deferred tile load."""
+        if not self._stage:
+            return False
+        return self._enable_terrain_colliders(self._stage)
 
     # ------------------------------------------------------------------
     # Material helper

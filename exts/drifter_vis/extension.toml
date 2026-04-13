@@ -16,10 +16,10 @@ kit = true
 "omni.timeline"           = {}
 "omni.physx"              = {}
 # Debug draw is optional for Isaac Sim 5.1 — gracefully disabled if unavailable
-# "omni.isaac.debug_draw"   = {}
+"omni.isaac.debug_draw"   = {}
 
 # Cesium is optional — the extension falls back gracefully if absent
-# "cesium.omniverse"      = {}
+"cesium.omniverse"      = {}
 
 [python]
 path = "."
@@ -29,6 +29,6 @@ name = "src"
 
 [settings]
 # Default CSV path relative to the repo root (overridden via UI file picker)
-exts.default_csv = "data/enoFeb16th_smoothed.csv"
+exts.default_csv = "drifter_vis/data/enoFeb16th_smoothed.csv"
 exts.fps          = 24.0
 exts.prebake_mode = true

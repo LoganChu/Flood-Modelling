@@ -197,7 +197,6 @@ class PhysicsValidator:
         self,
         sim_east: np.ndarray,
         sim_north: np.ndarray,
-        enu_up: np.ndarray,
         discrepancy: np.ndarray,
         time_s: np.ndarray,
         fps: float = 24.0,
@@ -211,6 +210,9 @@ class PhysicsValidator:
         The prim path is TRAJECTORY_PHYSICS_PATH (defined in scene_builder.py
         as a static curve; here we just update its point colours if it already
         exists, or skip if not).
+
+        Points are positioned at Y=0.3 m above the ground plane initially.
+        TerrainDraper will update Y values to terrain_height + 0.3 after tiles load.
         """
         if not _USD_AVAILABLE:
             log.warning("USD not available — bake_physics_trajectory() is a no-op")
@@ -227,10 +229,10 @@ class PhysicsValidator:
         colours = [Gf.Vec3f(*discrepancy_to_rgb(float(d))) for d in discrepancy]
         curves.GetDisplayColorAttr().Set(Vt.Vec3fArray(colours))
 
-        # Update point positions
+        # Update point positions (Y is 0.3 for visual separation)
         pts = [
-            Gf.Vec3f(float(e), float(u) + 0.3, float(n))
-            for e, u, n in zip(sim_east, enu_up, sim_north)
+            Gf.Vec3f(float(e), 0.3, float(n))
+            for e, n in zip(sim_east, sim_north)
         ]
         curves.GetPointsAttr().Set(Vt.Vec3fArray(pts))
 

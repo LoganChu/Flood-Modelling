@@ -11,7 +11,9 @@
       "Bash(python3:*)",
       "Bash(python:*)",
       "Bash(ls -1 *.png *.html)",
-      "Bash(ls -1 *.png)"
+      "Bash(ls -1 *.png)",
+      "Bash(xargs grep:*)",
+      "Bash(grep:*)"
     ]
   }
 }

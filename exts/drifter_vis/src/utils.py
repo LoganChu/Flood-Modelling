@@ -29,6 +29,16 @@ ARROW_SCALE: float = 0.5              # Arrow length per (m/s) for velocity arro
 ACCEL_ARROW_SCALE: float = 0.1        # Arrow length per (m/s²) for accel arrows
 
 # ---------------------------------------------------------------------------
+# Terrain draping (PhysX raycast)
+# ---------------------------------------------------------------------------
+TERRAIN_CAST_ORIGIN_Y: float      = 1000.0   # ray origin height above stage (m)
+TERRAIN_ABOVE_OFFSET_M: float     = 0.05     # lift above hit surface (m)
+TERRAIN_DRAPE_WARMUP_FRAMES: int  = 120      # frames before first drape (~2s at 60fps)
+TERRAIN_DRAPE_UPDATE_INTERVAL: int = 300     # frames between re-drape passes
+TERRAIN_DRAPE_MAX_PASSES: int     = 3        # stop after this many passes
+CESIUM_TERRAIN_PATH: str = "/World/Cesium/CesiumWorldTerrain"
+
+# ---------------------------------------------------------------------------
 # Drifter bobbing
 # ---------------------------------------------------------------------------
 BOB_AMPLITUDE_M: float = 0.05         # ± vertical bobbing amplitude (m)
@@ -87,13 +97,23 @@ def check_dependencies() -> dict:
         "omni.kit.viewport.utility",
         "omni.isaac.debug_draw",
         "omni.physx",
-        "cesium.omniverse",
     ):
         try:
             importlib.import_module(mod)
             results[mod] = True
         except Exception:
             results[mod] = False
+
+    # Cesium: check if the extension is loaded (not import, since lxml may fail)
+    # We detect Cesium by checking if the extension manager can find it
+    try:
+        import omni.kit.app
+        app = omni.kit.app.get_app()
+        ext_manager = app.get_extension_manager()
+        cesium_ext_id = "cesium.omniverse"
+        results["cesium.omniverse"] = ext_manager.is_extension_enabled(cesium_ext_id)
+    except Exception:
+        results["cesium.omniverse"] = False
 
     # Convenience aliases
     results["cesium"] = results.get("cesium.omniverse", False)

@@ -23,6 +23,7 @@ Pipeline (triggered by "Build Scene" button or on_build() callback)
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Optional
@@ -46,11 +47,47 @@ from .animator         import Animator
 from .camera_manager   import CameraManager, CameraMode
 from .physics_validator import PhysicsValidator, DrifterPhysicsParams
 from .ui_panel         import DrifterUIPanel
-from .utils            import USD_STAGE_FPS, check_dependencies
+from .terrain_draper   import TerrainDraper
+from .utils            import (
+    USD_STAGE_FPS, check_dependencies,
+    TRAJECTORY_PATH, TRAJECTORY_PHYSICS_PATH, TRAJECTORY_EKF_PATH,
+)
 
 _DEFAULT_CSV = str(
     Path(__file__).resolve().parents[2] / "data" / "enoFeb16th_smoothed.csv"
 )
+
+
+def _get_config_path() -> Path:
+    """Get the path to the CSV path config file."""
+    return Path(__file__).resolve().parent / ".last_csv_path.json"
+
+
+def _load_last_csv_path() -> Optional[str]:
+    """Load the last CSV path from persistent storage, if it exists and is valid."""
+    try:
+        config_file = _get_config_path()
+        if config_file.exists():
+            with open(config_file, 'r') as f:
+                data = json.load(f)
+                path = data.get("path")
+                if path and Path(path).exists():
+                    log.debug("Loaded last CSV path: %s", path)
+                    return path
+    except Exception as exc:
+        log.debug("Failed to load last CSV path: %s", exc)
+    return None
+
+
+def _save_last_csv_path(path: str) -> None:
+    """Save the CSV path to persistent storage."""
+    try:
+        config_file = _get_config_path()
+        with open(config_file, 'w') as f:
+            json.dump({"path": path}, f)
+        log.debug("Saved CSV path: %s", path)
+    except Exception as exc:
+        log.warning("Failed to save CSV path: %s", exc)
 
 
 class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
@@ -69,7 +106,9 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
         self._animator:  Optional[Animator]          = None
         self._cam_mgr:   Optional[CameraManager]     = None
         self._validator: Optional[PhysicsValidator]  = None
-        self._csv_path: str = _DEFAULT_CSV
+        self._draper:    Optional[TerrainDraper]     = None
+        # Load last CSV path if available, otherwise use default
+        self._csv_path: str = _load_last_csv_path() or _DEFAULT_CSV
         self._physics_mode: bool = False
         self._prebake_mode: bool = True
 
@@ -81,6 +120,9 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
 
     def on_shutdown(self) -> None:
         log.info("DrifterVisExtension shutting down")
+        if self._draper:
+            self._draper.stop()
+            self._draper = None
         if self._animator:
             self._animator.deactivate()
         if self._panel:
@@ -146,6 +188,7 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
     def _on_load_csv(self, path: str) -> None:
         if path:
             self._csv_path = path
+            _save_last_csv_path(path)
         self._panel.set_status(f"CSV selected: {Path(self._csv_path).name}")
 
     def _build_pipeline(self) -> None:
@@ -180,7 +223,6 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
         self._builder.build(
             east_arr  = geo.enu_east,
             north_arr = geo.enu_north,
-            up_arr    = geo.enu_up,
             speeds    = df["speed_ms"].values,
         )
 
@@ -210,7 +252,7 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
         panel.set_status("Step 5/6: Setting up cameras…")
         centre = (
             float(geo.usd_x.mean()),
-            float(geo.usd_y.mean()),
+            0.0,
             float(geo.usd_z.mean()),
         )
         extent = max(
@@ -238,11 +280,33 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
                 geo.enu_east, geo.enu_north, sim_east, sim_north,
             )
             self._validator.bake_physics_trajectory(
-                sim_east, sim_north, geo.enu_up,
+                sim_east, sim_north,
                 discrepancy, df["time_s"].values, fps=USD_STAGE_FPS,
             )
         else:
             panel.set_status("Step 6/6: Physics skipped (enable via checkbox)")
+
+        # Step 4b: Terrain draping (post-bake, deferred via frame counter)
+        panel.set_status("Step 4b/6: Scheduling terrain drape…")
+        curve_paths = [(TRAJECTORY_PATH, 0.0)]
+        if self._physics_mode:
+            curve_paths.append((TRAJECTORY_PHYSICS_PATH, 0.3))
+        curve_paths.append((TRAJECTORY_EKF_PATH, 0.6))
+
+        if self._draper is not None:
+            self._draper.stop()
+
+        deps = check_dependencies()
+        self._draper = TerrainDraper(
+            east_arr   = geo.enu_east,
+            north_arr  = geo.enu_north,
+            animator   = self._animator,
+            curve_paths= curve_paths,
+            bob_y_arr  = geo.bob_y,
+            enabled    = deps.get("cesium", False) and deps.get("omni.physx", False),
+            builder    = self._builder,
+        )
+        self._draper.start()
 
         panel.set_total_frames(len(df))
         panel.set_status(
