@@ -178,6 +178,7 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
             on_seek            = self._on_seek,
             on_camera          = self._on_camera_changed,
             on_physics_toggled = self._on_physics_toggled,
+            on_raycast         = self._on_raycast,
         )
         self._panel.show()
 
@@ -361,3 +362,14 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
         if enabled and self._loader is not None:
             # Trigger a rebuild to include physics trajectory
             self._build_pipeline()
+
+    def _on_raycast(self) -> None:
+        if self._draper is None:
+            self._panel.set_status("Build the scene first before raycasting")
+            return
+        self._panel.set_status("Raycasting terrain…")
+        success = self._draper.run_drape_pass()
+        if success:
+            self._panel.set_status("Raycast complete")
+        else:
+            self._panel.set_status("Raycast failed — tiles may not be loaded yet")

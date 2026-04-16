@@ -85,6 +85,8 @@ class SceneBuilder:
         self._origin_lat = origin_lat
         self._origin_lon = origin_lon
         self._origin_alt = origin_alt
+        log.info("SceneBuilder.__init__: initialized with georeference origin - lat=%.5f, lon=%.5f, alt=%.1f",
+                origin_lat, origin_lon, origin_alt)
         self._deps = check_dependencies()
         self._stage: Optional[object] = None
 
@@ -199,23 +201,64 @@ class SceneBuilder:
         """
         Check if Cesium prims are already set up in the scene.
 
-        If Cesium World Terrain exists, validate/set its georeference. Otherwise,
-        fall back to water plane and log instructions for manual setup.
+        If Cesium World Terrain exists, validate/set its georeference and reparent
+        it under /World so it shares the same coordinate hierarchy as the trajectory.
+        Otherwise, fall back to water plane and log instructions for manual setup.
         """
-        from .utils import CESIUM_TERRAIN_PATH
+        from .utils import CESIUM_TERRAIN_PATH, WORLD_PATH
+
+        log.info("_build_cesium_terrain: START - checking for Cesium terrain at %s", CESIUM_TERRAIN_PATH)
 
         # Check if Cesium terrain was manually added to the scene
         cesium_prim = stage.GetPrimAtPath(CESIUM_TERRAIN_PATH)
         if cesium_prim.IsValid():
-            log.info("Cesium World Terrain found at %s — using terrain", CESIUM_TERRAIN_PATH)
+            log.info("_build_cesium_terrain: Cesium World Terrain FOUND at %s (type=%s)",
+                    CESIUM_TERRAIN_PATH, cesium_prim.GetTypeName())
+
+            # Reparent Cesium terrain under /World if it's at root level
+            # This ensures raycasts work correctly (both terrain and trajectory in same coord space)
+            parent = cesium_prim.GetParent()
+            parent_path = str(parent.GetPath()) if parent else "/"
+            if parent_path != WORLD_PATH:
+                log.info("_build_cesium_terrain: Cesium terrain is at root level (%s), "
+                        "reparenting under %s for raycast coordinate alignment",
+                        parent_path, WORLD_PATH)
+                world_prim = stage.GetPrimAtPath(WORLD_PATH)
+                if world_prim.IsValid():
+                    try:
+                        cesium_name = cesium_prim.GetName()
+                        old_path = cesium_prim.GetPath()
+                        new_path = Sdf.Path(f"{WORLD_PATH}/{cesium_name}")
+
+                        # Use Sdf layer operations to move the prim spec
+                        root_layer = stage.GetRootLayer()
+                        old_spec = root_layer.GetPrimAtPath(old_path)
+                        if old_spec:
+                            # Move spec in the layer hierarchy
+                            Sdf.BatchNamespaceEdit([
+                                Sdf.NamespaceEdit.Reparent(old_path, new_path.GetParentPath(), new_path.GetName())
+                            ]).Apply(root_layer)
+                            log.info("_build_cesium_terrain: reparented from %s to %s", old_path, new_path)
+
+                            # Fetch prim at new location (don't reload stage to avoid invalidating other prims)
+                            cesium_prim = stage.GetPrimAtPath(str(new_path))
+                            if cesium_prim.IsValid():
+                                log.info("_build_cesium_terrain: prim now accessible at new location")
+                        else:
+                            log.info("_build_cesium_terrain: prim spec not found at %s", old_path)
+                    except Exception as exc:
+                        log.info("_build_cesium_terrain: reparenting failed: %s (continuing anyway)", exc)
+
             # Try to set/validate Cesium Georeference
             self._sync_cesium_georeference(stage)
+            log.info("_build_cesium_terrain: COMPLETE - using Cesium terrain")
             return  # Don't build water plane; use existing Cesium
 
         # Cesium not set up yet; log instructions and fall back
         log.info(
-            "Cesium is installed but terrain not yet in scene. "
-            "lat=%.5f, lon=%.5f, height=%.1f",
+            "_build_cesium_terrain: Cesium terrain NOT FOUND at %s, falling back to water plane. "
+            "Expected CSV origin: lat=%.5f, lon=%.5f, height=%.1f",
+            CESIUM_TERRAIN_PATH,
             self._origin_lat, self._origin_lon, self._origin_alt
         )
         self._build_water_plane(stage)
@@ -226,36 +269,76 @@ class SceneBuilder:
 
         This ensures the drifter trajectory aligns with Cesium terrain tiles.
         """
+        log.info("_sync_cesium_georeference: START")
         try:
             cesium_georef_path = "/CesiumGeoreference"
+            log.info("_sync_cesium_georeference: looking for prim at %s", cesium_georef_path)
+
             georef_prim = stage.GetPrimAtPath(cesium_georef_path)
             if not georef_prim.IsValid():
-                log.debug("Cesium Georeference not found at %s", cesium_georef_path)
+                log.info("_sync_cesium_georeference: prim NOT FOUND/INVALID at %s", cesium_georef_path)
                 return
 
-            # Set latitude, longitude, height to match CSV origin
-            lat_attr = georef_prim.GetAttribute("cesium:latitude")
-            lon_attr = georef_prim.GetAttribute("cesium:longitude")
-            height_attr = georef_prim.GetAttribute("cesium:height")
+            log.info("_sync_cesium_georeference: prim found and valid, type=%s", georef_prim.GetTypeName())
 
-            log.debug("Cesium attributes found: lat=%s, lon=%s, height=%s", lat_attr, lon_attr, height_attr)
+            # Set latitude, longitude, height to match CSV origin
+            lat_attr = georef_prim.GetAttribute("cesium:georeferenceOrigin:latitude")
+            lon_attr = georef_prim.GetAttribute("cesium:georeferenceOrigin:longitude")
+            height_attr = georef_prim.GetAttribute("cesium:georeferenceOrigin:height")
+
+            log.info("_sync_cesium_georeference: attribute lookup results - lat=%s, lon=%s, height=%s",
+                    "found" if lat_attr else "NOT FOUND",
+                    "found" if lon_attr else "NOT FOUND",
+                    "found" if height_attr else "NOT FOUND")
+
+            success_count = 0
 
             if lat_attr:
-                log.debug("Setting cesium:latitude to %.5f", self._origin_lat)
-                lat_attr.Set(self._origin_lat)
+                try:
+                    old_val = lat_attr.Get()
+                    log.info("_sync_cesium_georeference: setting cesium:latitude from %.5f to %.5f", old_val, self._origin_lat)
+                    lat_attr.Set(self._origin_lat)
+                    new_val = lat_attr.Get()
+                    log.info("_sync_cesium_georeference: cesium:latitude SET SUCCESS - verified new value: %.5f", new_val)
+                    success_count += 1
+                except Exception as exc:
+                    log.info("_sync_cesium_georeference: FAILED to set cesium:latitude: %s", exc)
+            else:
+                log.info("_sync_cesium_georeference: cesium:latitude attribute not found")
+
             if lon_attr:
-                log.debug("Setting cesium:longitude to %.5f", self._origin_lon)
-                lon_attr.Set(self._origin_lon)
+                try:
+                    old_val = lon_attr.Get()
+                    log.info("_sync_cesium_georeference: setting cesium:longitude from %.5f to %.5f", old_val, self._origin_lon)
+                    lon_attr.Set(self._origin_lon)
+                    new_val = lon_attr.Get()
+                    log.info("_sync_cesium_georeference: cesium:longitude SET SUCCESS - verified new value: %.5f", new_val)
+                    success_count += 1
+                except Exception as exc:
+                    log.info("_sync_cesium_georeference: FAILED to set cesium:longitude: %s", exc)
+            else:
+                log.info("_sync_cesium_georeference: cesium:longitude attribute not found")
+
             if height_attr:
-                log.debug("Setting cesium:height to %.1f", self._origin_alt)
-                height_attr.Set(self._origin_alt)
+                try:
+                    old_val = height_attr.Get()
+                    log.info("_sync_cesium_georeference: setting cesium:height from %.1f to %.1f", old_val, self._origin_alt)
+                    height_attr.Set(self._origin_alt)
+                    new_val = height_attr.Get()
+                    log.info("_sync_cesium_georeference: cesium:height SET SUCCESS - verified new value: %.1f", new_val)
+                    success_count += 1
+                except Exception as exc:
+                    log.info("_sync_cesium_georeference: FAILED to set cesium:height: %s", exc)
+            else:
+                log.info("_sync_cesium_georeference: cesium:height attribute not found")
 
             log.info(
-                "Cesium Georeference synced: lat=%.5f, lon=%.5f, height=%.1f",
+                "_sync_cesium_georeference: COMPLETE - successfully set %d/3 attributes (lat=%.5f, lon=%.5f, height=%.1f)",
+                success_count,
                 self._origin_lat, self._origin_lon, self._origin_alt
             )
         except Exception as exc:
-            log.warning("Failed to sync Cesium Georeference: %s", exc)
+            log.info("_sync_cesium_georeference: FAILED with exception: %s", exc)
 
     def _build_water_plane(self, stage) -> None:
         """Flat 500×500 m water plane as Cesium fallback."""
@@ -410,28 +493,39 @@ class SceneBuilder:
             if existing.IsValid():
                 stage.RemovePrim(cam_path)
 
-        # Overview camera (fixed, at path centroid)
-        cx = float(east_arr.mean())
-        cy = 0.0
-        cz = float(north_arr.mean())
-        extent = max(
-            float(east_arr.max() - east_arr.min()),
-            float(north_arr.max() - north_arr.min()),
-        )
-        orbit_h = extent * 0.7
+        # Overview camera (fixed, at trajectory start) — positioned high to load Cesium tiles
+        east_min = float(east_arr.min())
+        east_max = float(east_arr.max())
+        north_min = float(north_arr.min())
+        north_max = float(north_arr.max())
+
+        # Position camera over the START of the trajectory (first data point)
+        cx = float(east_arr[0])
+        cz = float(north_arr[0])
+        cy = 100.0
+
+        extent = max(east_max - east_min, north_max - north_min)
+        # Height positioned to view trajectory start and extend along the path
+        orbit_h = extent * 1.5
+
+        log.info("Overview camera: trajectory bounds east=[%.2f, %.2f], north=[%.2f, %.2f], extent=%.2f",
+                east_min, east_max, north_min, north_max, extent)
+        log.info("Overview camera: positioned at start (%.2f, %.2f, %.2f) height=%.2f for Cesium tile loading",
+                cx, orbit_h, cz, orbit_h)
 
         overview_path = f"{CAMERAS_PATH}/OverviewCamera"
         cam = UsdGeom.Camera.Define(stage, overview_path)
-        cam.GetFocalLengthAttr().Set(35.0)
+        # Wider field of view to ensure trajectory from start is visible
+        cam.GetFocalLengthAttr().Set(24.0)
         cam.GetHorizontalApertureAttr().Set(36.0)
 
         cam_xform = UsdGeom.Xformable(cam.GetPrim())
-        # Position above centroid, looking straight down at the path
+        # Position above START point at high altitude, looking down along the trajectory
         # Use -90° X rotation (tip back) to look down at the ground plane below
         cam_xform.AddTranslateOp().Set(Gf.Vec3d(cx, cy + orbit_h, cz))
         cam_xform.AddRotateXYZOp().Set(Gf.Vec3f(-90.0, 0.0, 0.0))
 
-        log.debug("Overview camera at (%.1f, %.1f, %.1f) h=%.1f", cx, cy, cz, orbit_h)
+        log.info("Overview camera at (%.1f, %.1f, %.1f) with height=%.1f m", cx, cy + orbit_h, cz, orbit_h)
 
         # Chase and Onboard cameras: follow drifter without rotating
         self._build_follow_cameras(stage, east_arr, north_arr)
@@ -519,30 +613,41 @@ class SceneBuilder:
         Returns True if the prim was found and APIs applied, False otherwise.
         """
         if not _USD_AVAILABLE:
+            log.info("_enable_terrain_colliders: USD not available, returning False")
             return False
 
         from .utils import CESIUM_TERRAIN_PATH
+        log.info("_enable_terrain_colliders: looking for prim at %s", CESIUM_TERRAIN_PATH)
+
         prim = stage.GetPrimAtPath(CESIUM_TERRAIN_PATH)
         if not prim.IsValid():
-            log.debug("CesiumWorldTerrain prim not yet present at %s", CESIUM_TERRAIN_PATH)
+            log.info("_enable_terrain_colliders: CesiumWorldTerrain prim NOT FOUND/INVALID at %s", CESIUM_TERRAIN_PATH)
             return False
 
+        log.info("_enable_terrain_colliders: found prim at %s, type=%s", CESIUM_TERRAIN_PATH, prim.GetTypeName())
+
         # Apply collision API
-        if not UsdPhysics.CollisionAPI(prim):
+        collision_api = UsdPhysics.CollisionAPI(prim)
+        if not collision_api:
+            log.info("_enable_terrain_colliders: CollisionAPI not present, applying it...")
             UsdPhysics.CollisionAPI.Apply(prim)
-            log.info("Applied UsdPhysics.CollisionAPI to %s", CESIUM_TERRAIN_PATH)
+            log.info("_enable_terrain_colliders: Applied UsdPhysics.CollisionAPI to %s", CESIUM_TERRAIN_PATH)
+        else:
+            log.info("_enable_terrain_colliders: CollisionAPI already present on %s", CESIUM_TERRAIN_PATH)
 
         # Disable frustum culling so tiles load outside the viewport frustum
         frustum_attr = prim.GetAttribute("cesium:enableFrustumCulling")
         if not frustum_attr:
+            log.info("_enable_terrain_colliders: creating cesium:enableFrustumCulling attribute...")
             frustum_attr = prim.CreateAttribute(
                 "cesium:enableFrustumCulling",
                 Sdf.ValueTypeNames.Bool,
                 custom=True
             )
         frustum_attr.Set(False)
+        log.info("_enable_terrain_colliders: cesium:enableFrustumCulling set to False")
 
-        log.info("Cesium terrain physics colliders enabled at %s", CESIUM_TERRAIN_PATH)
+        log.info("_enable_terrain_colliders: SUCCESS - Cesium terrain physics colliders enabled at %s", CESIUM_TERRAIN_PATH)
         return True
 
     def enable_terrain_colliders(self) -> bool:
