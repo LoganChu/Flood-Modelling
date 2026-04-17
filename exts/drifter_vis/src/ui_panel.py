@@ -67,7 +67,7 @@ class DrifterUIPanel:
     WINDOW_WIDTH = 340
     WINDOW_HEIGHT = 480
 
-    CAMERA_OPTIONS = ["Overview", "Chase (Follow)", "Onboard (POV)"]
+    CAMERA_OPTIONS = ["Overview", "Third Person"]
 
     def __init__(
         self,

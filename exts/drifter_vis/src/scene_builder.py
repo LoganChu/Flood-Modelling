@@ -14,8 +14,7 @@ USD stage structure:
       /Drifter
         DrifterXform         (animated Xform)
           DrifterMesh        (Sphere primitive)
-          ChaseCamera
-          OnboardCamera
+          ThirdPersonCamera
       /Cameras
         OverviewCamera
       /Lighting
@@ -495,15 +494,14 @@ class SceneBuilder:
         """Create the three scene cameras.
 
         Overview: prim created at CAMERAS_PATH; camera_manager bakes the orbit animation.
-        Chase / Onboard: created as children of DrifterXform with local offsets so they
-        inherit the drifter's animated world transform automatically — including terrain-
+        ThirdPersonCamera: created as a child of DrifterXform with a local offset so it
+        inherits the drifter's animated world transform automatically — including terrain-
         draped Y changes after raycasting.
         """
         # Remove existing camera prims if rebuilding
         for cam_path in [
             f"{CAMERAS_PATH}/OverviewCamera",
-            f"{DRIFTER_XFORM_PATH}/ChaseCamera",
-            f"{DRIFTER_XFORM_PATH}/OnboardCamera",
+            f"{DRIFTER_XFORM_PATH}/ThirdPersonCamera",
         ]:
             existing = stage.GetPrimAtPath(cam_path)
             if existing.IsValid():
@@ -528,21 +526,15 @@ class SceneBuilder:
         cam_xform.AddRotateXYZOp().Set(Gf.Vec3f(-90.0, 0.0, 0.0))
         log.info("Overview camera prim created at (%.1f, %.1f, %.1f)", cx, 100.0 + orbit_h, cz)
 
-        # Chase camera — child of DrifterXform, local offset: 1 m back, 0.5 m up
-        chase_cam = UsdGeom.Camera.Define(stage, f"{DRIFTER_XFORM_PATH}/ChaseCamera")
-        chase_cam.GetFocalLengthAttr().Set(24.0)
-        chase_cam.GetHorizontalApertureAttr().Set(36.0)
-        chase_xform = UsdGeom.Xformable(chase_cam.GetPrim())
-        chase_xform.AddTranslateOp().Set(Gf.Vec3d(0.0, 0.5, -1.0))
+        # Third-person camera — child of DrifterXform, 8 m behind and 3 m above, pitched down
+        tp_cam = UsdGeom.Camera.Define(stage, f"{DRIFTER_XFORM_PATH}/ThirdPersonCamera")
+        tp_cam.GetFocalLengthAttr().Set(24.0)
+        tp_cam.GetHorizontalApertureAttr().Set(36.0)
+        tp_xform = UsdGeom.Xformable(tp_cam.GetPrim())
+        tp_xform.AddTranslateOp().Set(Gf.Vec3d(0.0, 3.0, -8.0))
+        tp_xform.AddRotateXYZOp().Set(Gf.Vec3f(-20.0, 0.0, 0.0))
 
-        # Onboard camera — child of DrifterXform, local offset: 0.3 m up
-        onboard_cam = UsdGeom.Camera.Define(stage, f"{DRIFTER_XFORM_PATH}/OnboardCamera")
-        onboard_cam.GetFocalLengthAttr().Set(18.0)
-        onboard_cam.GetHorizontalApertureAttr().Set(36.0)
-        onboard_xform = UsdGeom.Xformable(onboard_cam.GetPrim())
-        onboard_xform.AddTranslateOp().Set(Gf.Vec3d(0.0, 0.3, 0.0))
-
-        log.info("Chase and Onboard cameras created as DrifterXform children (inherit animated transform)")
+        log.info("ThirdPersonCamera created as DrifterXform child (inherit animated transform)")
 
     # ------------------------------------------------------------------
     # ------------------------------------------------------------------

@@ -352,9 +352,8 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
         if not self._cam_mgr:
             return
         mode_map = {
-            "Overview":       CameraMode.OVERVIEW,
-            "Chase (Follow)": CameraMode.CHASE,
-            "Onboard (POV)":  CameraMode.ONBOARD,
+            "Overview":      CameraMode.OVERVIEW,
+            "Third Person":  CameraMode.THIRD_PERSON,
         }
         self._cam_mgr.activate(mode_map.get(mode_name, CameraMode.OVERVIEW))
 

@@ -342,6 +342,17 @@ class TerrainDraper:
         if target_paths:
             top = sorted(target_paths.items(), key=lambda x: -x[1])[:5]
             log.info("TerrainDraper: hit targets - %s", ", ".join(f"{p}({c})" for p, c in top))
+
+        # Reject results that only hit our own geometry — Cesium tiles haven't
+        # streamed into the RTX BVH yet.  Wait for a pass where at least one
+        # hit lands on a cesium_geometry_pool prim.
+        cesium_hits = sum(c for p, c in target_paths.items() if "cesium" in p.lower())
+        if cesium_hits == 0:
+            log.info(
+                "TerrainDraper: no Cesium geometry in BVH yet (hits on %s) — will retry",
+                ", ".join(target_paths.keys()),
+            )
+            return None
         if n > 0:
             log.info(
                 "TerrainDraper: heights - min=%.2f, max=%.2f, mean=%.2f",

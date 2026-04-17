@@ -244,9 +244,8 @@ def run(
                 on_stop  = lambda: _tl.get_timeline_interface().stop(),
                 on_speed = animator.set_speed_scale,
                 on_camera = lambda m: cam_mgr.activate(
-                    {"Overview": CameraMode.OVERVIEW,
-                     "Chase (Follow)": CameraMode.CHASE,
-                     "Onboard (POV)": CameraMode.ONBOARD}.get(m, CameraMode.OVERVIEW)
+                    {"Overview":     CameraMode.OVERVIEW,
+                     "Third Person": CameraMode.THIRD_PERSON}.get(m, CameraMode.OVERVIEW)
                 ),
             )
             panel.set_dataframe(df)

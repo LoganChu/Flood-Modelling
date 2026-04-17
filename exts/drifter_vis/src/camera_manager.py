@@ -1,19 +1,16 @@
 """
-camera_manager.py — Manage three viewports for the River Drifter Visualisation.
+camera_manager.py — Manage two viewports for the River Drifter Visualisation.
 
 Cameras
 -------
-OVERVIEW   /World/Cameras/OverviewCamera
+OVERVIEW      /World/Cameras/OverviewCamera
     Orbits the full path from above.  The orbit is pre-baked as USD time
     samples on the camera Xform so it plays even without a Python process.
 
-CHASE      /World/Drifter/DrifterXform/ChaseCamera
+THIRD_PERSON  /World/Drifter/DrifterXform/ThirdPersonCamera
     Child prim of the drifter — inherits its animated transform and follows
-    automatically.  Fixed local offset (−5 m behind, +2 m above).
-
-ONBOARD    /World/Drifter/DrifterXform/OnboardCamera
-    Mounted on the drifter with a slight forward/upward tilt.  Gives a POV
-    perspective from inside the buoy sensor housing.
+    automatically.  Local offset: 8 m behind, 3 m above, pitched −20° down
+    so the drifter stays centred in frame above the terrain surface.
 
 Camera switching uses omni.kit.viewport.utility to set the active camera in
 the primary viewport.  If viewport utilities are unavailable (Script Editor
@@ -49,9 +46,8 @@ except ImportError:
 
 
 class CameraMode(enum.Enum):
-    OVERVIEW = "Overview"
-    CHASE    = "Chase (Follow)"
-    ONBOARD  = "Onboard (POV)"
+    OVERVIEW      = "Overview"
+    THIRD_PERSON  = "Third Person"
 
 
 class CameraManager:
@@ -60,31 +56,28 @@ class CameraManager:
 
     Parameters
     ----------
-    overview_cam_path : USD path to the overview camera
-    chase_cam_path    : USD path to the chase camera (child of drifter)
-    onboard_cam_path  : USD path to the onboard camera (child of drifter)
-    centre            : (x, y, z) world-space centroid of the drifter path
-    orbit_radius      : orbital radius for the overview camera (m)
-    orbit_period_s    : time in seconds for one full orbit
-    data_duration_s   : total duration of the drifter data (s)
-    fps               : USD stage fps
+    overview_cam_path     : USD path to the overview camera
+    third_person_cam_path : USD path to the third-person camera (child of drifter)
+    centre                : (x, y, z) world-space centroid of the drifter path
+    orbit_radius          : orbital radius for the overview camera (m)
+    orbit_period_s        : time in seconds for one full orbit
+    data_duration_s       : total duration of the drifter data (s)
+    fps                   : USD stage fps
     """
 
     def __init__(
         self,
-        overview_cam_path: str = f"{CAMERAS_PATH}/OverviewCamera",
-        chase_cam_path:    str = f"{DRIFTER_XFORM_PATH}/ChaseCamera",
-        onboard_cam_path:  str = f"{DRIFTER_XFORM_PATH}/OnboardCamera",
-        centre:            Tuple[float, float, float] = (0.0, 0.0, 0.0),
-        orbit_radius:      float = 200.0,
-        orbit_period_s:    float = 120.0,
-        data_duration_s:   float = 527.0,
-        fps:               float = USD_STAGE_FPS,
+        overview_cam_path:      str = f"{CAMERAS_PATH}/OverviewCamera",
+        third_person_cam_path:  str = f"{DRIFTER_XFORM_PATH}/ThirdPersonCamera",
+        centre:                 Tuple[float, float, float] = (0.0, 0.0, 0.0),
+        orbit_radius:           float = 200.0,
+        orbit_period_s:         float = 120.0,
+        data_duration_s:        float = 527.0,
+        fps:                    float = USD_STAGE_FPS,
     ) -> None:
-        self._overview_path = overview_cam_path
-        self._chase_path    = chase_cam_path
-        self._onboard_path  = onboard_cam_path
-        self._centre        = centre
+        self._overview_path      = overview_cam_path
+        self._third_person_path  = third_person_cam_path
+        self._centre             = centre
         self._orbit_radius  = orbit_radius
         self._orbit_period  = orbit_period_s
         self._duration      = data_duration_s
@@ -181,7 +174,6 @@ class CameraManager:
 
     def _path_for_mode(self, mode: CameraMode) -> str:
         return {
-            CameraMode.OVERVIEW: self._overview_path,
-            CameraMode.CHASE:    self._chase_path,
-            CameraMode.ONBOARD:  self._onboard_path,
+            CameraMode.OVERVIEW:     self._overview_path,
+            CameraMode.THIRD_PERSON: self._third_person_path,
         }[mode]
