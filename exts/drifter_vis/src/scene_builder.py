@@ -48,7 +48,7 @@ try:
     import omni.usd
     import omni.kit.commands
     from pxr import (
-        Gf, Sdf, Usd, UsdGeom, UsdLux, UsdPhysics, UsdShade,
+        Gf, Sdf, Usd, UsdGeom, UsdLux, UsdShade,
         Vt, Kind,
     )
     _USD_AVAILABLE = True
@@ -146,9 +146,6 @@ class SceneBuilder:
 
         if ekf_east is not None and ekf_north is not None:
             self._build_ekf_trajectory(stage, ekf_east, ekf_north)
-
-        # Enable physics colliders on Cesium terrain (if present) for TerrainDraper raycasting
-        self._enable_terrain_colliders(stage)
 
         log.info("USD scene build complete.")
 
@@ -251,6 +248,19 @@ class SceneBuilder:
 
             # Try to set/validate Cesium Georeference
             self._sync_cesium_georeference(stage)
+
+            # Disable frustum culling so tiles stream into the RTX BVH even outside the viewport
+            try:
+                frustum_attr = cesium_prim.GetAttribute("cesium:enableFrustumCulling")
+                if not frustum_attr:
+                    frustum_attr = cesium_prim.CreateAttribute(
+                        "cesium:enableFrustumCulling", Sdf.ValueTypeNames.Bool, custom=True
+                    )
+                frustum_attr.Set(False)
+                log.info("_build_cesium_terrain: cesium:enableFrustumCulling set to False")
+            except Exception as exc:
+                log.info("_build_cesium_terrain: failed to set frustum culling attr: %s", exc)
+
             log.info("_build_cesium_terrain: COMPLETE - using Cesium terrain")
             return  # Don't build water plane; use existing Cesium
 
@@ -482,180 +492,59 @@ class SceneBuilder:
         east_arr: np.ndarray,
         north_arr: np.ndarray,
     ) -> None:
-        """Create orbit and follow cameras above the path centroid.
+        """Create the three scene cameras.
 
-        Chase and Onboard cameras follow the drifter's path without rotating,
-        maintaining a fixed horizontal orientation at all times.
+        Overview: prim created at CAMERAS_PATH; camera_manager bakes the orbit animation.
+        Chase / Onboard: created as children of DrifterXform with local offsets so they
+        inherit the drifter's animated world transform automatically — including terrain-
+        draped Y changes after raycasting.
         """
-        # Remove existing camera prims if rebuilding scene
-        for cam_path in [f"{CAMERAS_PATH}/OverviewCamera", f"{CAMERAS_PATH}/ChaseCamera", f"{CAMERAS_PATH}/OnboardCamera"]:
+        # Remove existing camera prims if rebuilding
+        for cam_path in [
+            f"{CAMERAS_PATH}/OverviewCamera",
+            f"{DRIFTER_XFORM_PATH}/ChaseCamera",
+            f"{DRIFTER_XFORM_PATH}/OnboardCamera",
+        ]:
             existing = stage.GetPrimAtPath(cam_path)
             if existing.IsValid():
                 stage.RemovePrim(cam_path)
 
-        # Overview camera (fixed, at trajectory start) — positioned high to load Cesium tiles
+        # Overview camera — camera_manager.bake_overview_orbit() writes the animation
         east_min = float(east_arr.min())
         east_max = float(east_arr.max())
         north_min = float(north_arr.min())
         north_max = float(north_arr.max())
-
-        # Position camera over the START of the trajectory (first data point)
         cx = float(east_arr[0])
         cz = float(north_arr[0])
-        cy = 100.0
-
         extent = max(east_max - east_min, north_max - north_min)
-        # Height positioned to view trajectory start and extend along the path
         orbit_h = extent * 1.5
-
-        log.info("Overview camera: trajectory bounds east=[%.2f, %.2f], north=[%.2f, %.2f], extent=%.2f",
-                east_min, east_max, north_min, north_max, extent)
-        log.info("Overview camera: positioned at start (%.2f, %.2f, %.2f) height=%.2f for Cesium tile loading",
-                cx, orbit_h, cz, orbit_h)
 
         overview_path = f"{CAMERAS_PATH}/OverviewCamera"
         cam = UsdGeom.Camera.Define(stage, overview_path)
-        # Wider field of view to ensure trajectory from start is visible
         cam.GetFocalLengthAttr().Set(24.0)
         cam.GetHorizontalApertureAttr().Set(36.0)
-
         cam_xform = UsdGeom.Xformable(cam.GetPrim())
-        # Position above START point at high altitude, looking down along the trajectory
-        # Use -90° X rotation (tip back) to look down at the ground plane below
-        cam_xform.AddTranslateOp().Set(Gf.Vec3d(cx, cy + orbit_h, cz))
+        cam_xform.AddTranslateOp().Set(Gf.Vec3d(cx, 100.0 + orbit_h, cz))
         cam_xform.AddRotateXYZOp().Set(Gf.Vec3f(-90.0, 0.0, 0.0))
+        log.info("Overview camera prim created at (%.1f, %.1f, %.1f)", cx, 100.0 + orbit_h, cz)
 
-        log.info("Overview camera at (%.1f, %.1f, %.1f) with height=%.1f m", cx, cy + orbit_h, cz, orbit_h)
-
-        # Chase and Onboard cameras: follow drifter without rotating
-        self._build_follow_cameras(stage, east_arr, north_arr)
-
-    def _build_follow_cameras(
-        self,
-        stage,
-        east_arr: np.ndarray,
-        north_arr: np.ndarray,
-    ) -> None:
-        """Create Chase and Onboard cameras that follow the drifter without rotating.
-
-        Cameras are positioned at each path point with time samples, maintaining
-        a fixed horizontal orientation throughout the animation.
-
-        Chase: 5m behind the drifter, 2m up, looking forward (unrotated).
-        Onboard: 0.3m above drifter, first-person view (unrotated).
-        """
-        n_points = len(east_arr)
-
-        # Compute path heading (direction of travel) at each point
-        headings = np.zeros(n_points, dtype=float)
-        for i in range(n_points - 1):
-            de = float(east_arr[i + 1] - east_arr[i])
-            dn = float(north_arr[i + 1] - north_arr[i])
-            heading = math.atan2(de, dn)  # radians: 0=north, π/2=east
-            headings[i] = heading
-        headings[-1] = headings[-2]  # repeat last heading at end
-
-        # Chase camera: 5m behind drifter, 2m up, always horizontal
-        chase_path = f"{CAMERAS_PATH}/ChaseCamera"
-        chase_cam = UsdGeom.Camera.Define(stage, chase_path)
+        # Chase camera — child of DrifterXform, local offset: 1 m back, 0.5 m up
+        chase_cam = UsdGeom.Camera.Define(stage, f"{DRIFTER_XFORM_PATH}/ChaseCamera")
         chase_cam.GetFocalLengthAttr().Set(24.0)
         chase_cam.GetHorizontalApertureAttr().Set(36.0)
-
         chase_xform = UsdGeom.Xformable(chase_cam.GetPrim())
-        chase_trans_op = chase_xform.AddTranslateOp()
-        chase_rot_op = chase_xform.AddRotateXYZOp()
+        chase_xform.AddTranslateOp().Set(Gf.Vec3d(0.0, 0.5, -1.0))
 
-        for i in range(n_points):
-            e = float(east_arr[i])
-            n = float(north_arr[i])
-            heading = float(headings[i])
-
-            # Offset: 5m backward along the heading direction
-            chase_e = e - 5.0 * math.sin(heading)
-            chase_n = n - 5.0 * math.cos(heading)
-            chase_y = 2.0
-
-            time_code = Usd.TimeCode(i)
-            chase_trans_op.Set(Gf.Vec3d(chase_e, chase_y, chase_n), time_code)
-            chase_rot_op.Set(Gf.Vec3f(0.0, 0.0, 0.0), time_code)  # Horizontal
-
-        # Onboard camera: 0.3m above drifter, always horizontal
-        onboard_path = f"{CAMERAS_PATH}/OnboardCamera"
-        onboard_cam = UsdGeom.Camera.Define(stage, onboard_path)
+        # Onboard camera — child of DrifterXform, local offset: 0.3 m up
+        onboard_cam = UsdGeom.Camera.Define(stage, f"{DRIFTER_XFORM_PATH}/OnboardCamera")
         onboard_cam.GetFocalLengthAttr().Set(18.0)
         onboard_cam.GetHorizontalApertureAttr().Set(36.0)
-
         onboard_xform = UsdGeom.Xformable(onboard_cam.GetPrim())
-        onboard_trans_op = onboard_xform.AddTranslateOp()
-        onboard_rot_op = onboard_xform.AddRotateXYZOp()
+        onboard_xform.AddTranslateOp().Set(Gf.Vec3d(0.0, 0.3, 0.0))
 
-        for i in range(n_points):
-            e = float(east_arr[i])
-            n = float(north_arr[i])
-
-            time_code = Usd.TimeCode(i)
-            onboard_trans_op.Set(Gf.Vec3d(e, 0.3, n), time_code)
-            onboard_rot_op.Set(Gf.Vec3f(0.0, 0.0, 0.0), time_code)  # Horizontal
-
-        log.debug("Chase and Onboard cameras created with %d time samples", n_points)
+        log.info("Chase and Onboard cameras created as DrifterXform children (inherit animated transform)")
 
     # ------------------------------------------------------------------
-    # Terrain colliders (for TerrainDraper raycasting)
-    # ------------------------------------------------------------------
-
-    def _enable_terrain_colliders(self, stage) -> bool:
-        """
-        Apply UsdPhysics.CollisionAPI to the CesiumWorldTerrain prim if it exists.
-
-        Also sets cesium:enableFrustumCulling = false so the tile loader
-        fetches the full tileset footprint regardless of viewport frustum.
-
-        Returns True if the prim was found and APIs applied, False otherwise.
-        """
-        if not _USD_AVAILABLE:
-            log.info("_enable_terrain_colliders: USD not available, returning False")
-            return False
-
-        from .utils import CESIUM_TERRAIN_PATH
-        log.info("_enable_terrain_colliders: looking for prim at %s", CESIUM_TERRAIN_PATH)
-
-        prim = stage.GetPrimAtPath(CESIUM_TERRAIN_PATH)
-        if not prim.IsValid():
-            log.info("_enable_terrain_colliders: CesiumWorldTerrain prim NOT FOUND/INVALID at %s", CESIUM_TERRAIN_PATH)
-            return False
-
-        log.info("_enable_terrain_colliders: found prim at %s, type=%s", CESIUM_TERRAIN_PATH, prim.GetTypeName())
-
-        # Apply collision API
-        collision_api = UsdPhysics.CollisionAPI(prim)
-        if not collision_api:
-            log.info("_enable_terrain_colliders: CollisionAPI not present, applying it...")
-            UsdPhysics.CollisionAPI.Apply(prim)
-            log.info("_enable_terrain_colliders: Applied UsdPhysics.CollisionAPI to %s", CESIUM_TERRAIN_PATH)
-        else:
-            log.info("_enable_terrain_colliders: CollisionAPI already present on %s", CESIUM_TERRAIN_PATH)
-
-        # Disable frustum culling so tiles load outside the viewport frustum
-        frustum_attr = prim.GetAttribute("cesium:enableFrustumCulling")
-        if not frustum_attr:
-            log.info("_enable_terrain_colliders: creating cesium:enableFrustumCulling attribute...")
-            frustum_attr = prim.CreateAttribute(
-                "cesium:enableFrustumCulling",
-                Sdf.ValueTypeNames.Bool,
-                custom=True
-            )
-        frustum_attr.Set(False)
-        log.info("_enable_terrain_colliders: cesium:enableFrustumCulling set to False")
-
-        log.info("_enable_terrain_colliders: SUCCESS - Cesium terrain physics colliders enabled at %s", CESIUM_TERRAIN_PATH)
-        return True
-
-    def enable_terrain_colliders(self) -> bool:
-        """Public accessor — re-applies collision API after deferred tile load."""
-        if not self._stage:
-            return False
-        return self._enable_terrain_colliders(self._stage)
-
     # ------------------------------------------------------------------
     # Material helper
     # ------------------------------------------------------------------

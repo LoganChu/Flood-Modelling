@@ -34,7 +34,7 @@ from .utils import (
 log = logging.getLogger(__name__)
 
 try:
-    from pxr import Gf, Sdf, Usd, UsdGeom, Vt
+    from pxr import Gf, Usd, UsdGeom, Vt
     import omni.usd
     import omni.timeline
     import omni.kit.app
@@ -129,7 +129,6 @@ class Animator:
         xformable.ClearXformOpOrder()
 
         translate_op  = xformable.AddTranslateOp(UsdGeom.XformOp.PrecisionDouble)
-        rotate_op     = xformable.AddRotateXYZOp(UsdGeom.XformOp.PrecisionFloat)
 
         n = len(self._time_s)
         log.info("Baking %d animation frames at %.1f fps (speed=%.1f×)…", n, self._fps, self._speed_scale)
@@ -138,14 +137,6 @@ class Animator:
             tc = self._time_s[i] * self._fps / self._speed_scale
             translate_op.Set(
                 Gf.Vec3d(float(self._usd_x[i]), float(self._usd_y[i]), float(self._usd_z[i])),
-                time=tc,
-            )
-            rotate_op.Set(
-                Gf.Vec3f(
-                    math.degrees(float(self._roll[i])),
-                    math.degrees(float(self._yaw[i])),
-                    math.degrees(float(self._pitch[i])),
-                ),
                 time=tc,
             )
 
@@ -224,13 +215,7 @@ class Animator:
     def _set_transform(self, xformable, row: int, time) -> None:
         xformable.ClearXformOpOrder()
         t_op = xformable.AddTranslateOp(UsdGeom.XformOp.PrecisionDouble)
-        r_op = xformable.AddRotateXYZOp(UsdGeom.XformOp.PrecisionFloat)
         t_op.Set(Gf.Vec3d(float(self._usd_x[row]), float(self._usd_y[row]), float(self._usd_z[row])), time)
-        r_op.Set(Gf.Vec3f(
-            math.degrees(float(self._roll[row])),
-            math.degrees(float(self._yaw[row])),
-            math.degrees(float(self._pitch[row])),
-        ), time)
 
     def _draw_arrows(self, row: int) -> None:
         """Draw velocity (blue) and acceleration (red) arrows via debug_draw."""

@@ -50,7 +50,7 @@ from .ui_panel         import DrifterUIPanel
 from .terrain_draper   import TerrainDraper
 from .utils            import (
     USD_STAGE_FPS, check_dependencies,
-    TRAJECTORY_PATH, TRAJECTORY_PHYSICS_PATH, TRAJECTORY_EKF_PATH,
+    TRAJECTORY_PATH, TRAJECTORY_PHYSICS_PATH,
 )
 
 _DEFAULT_CSV = str(
@@ -216,6 +216,10 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
 
         # Step 3: Build USD scene
         panel.set_status("Step 3/6: Building USD scene…")
+        # Clear selection so PhysX manipulator doesn't hold stale null-prim references
+        # after RemovePrim / DefinePrim calls inside SceneBuilder.build().
+        if _OMNI_AVAILABLE:
+            omni.usd.get_context().get_selection().clear_selected_prim_paths()
         self._builder = SceneBuilder(
             origin_lat = meta["origin_lat"],
             origin_lon = meta["origin_lon"],
@@ -292,7 +296,6 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
         curve_paths = [(TRAJECTORY_PATH, 0.0)]
         if self._physics_mode:
             curve_paths.append((TRAJECTORY_PHYSICS_PATH, 0.3))
-        curve_paths.append((TRAJECTORY_EKF_PATH, 0.6))
 
         if self._draper is not None:
             self._draper.stop()
@@ -304,8 +307,7 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
             animator   = self._animator,
             curve_paths= curve_paths,
             bob_y_arr  = geo.bob_y,
-            enabled    = deps.get("cesium", False) and deps.get("omni.physx", False),
-            builder    = self._builder,
+            enabled    = deps.get("cesium", False),
         )
         self._draper.start()
 
@@ -367,9 +369,8 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
         if self._draper is None:
             self._panel.set_status("Build the scene first before raycasting")
             return
-        self._panel.set_status("Raycasting terrain…")
-        success = self._draper.run_drape_pass()
-        if success:
-            self._panel.set_status("Raycast complete")
+        submitted = self._draper.run_drape_pass()
+        if submitted:
+            self._panel.set_status("Raycasting terrain — results apply on next frame")
         else:
-            self._panel.set_status("Raycast failed — tiles may not be loaded yet")
+            self._panel.set_status("Raycast unavailable — Cesium not loaded")

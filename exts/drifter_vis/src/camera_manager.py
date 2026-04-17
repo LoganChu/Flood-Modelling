@@ -131,21 +131,16 @@ class CameraManager:
         for i in range(num_samples + 1):
             frac = i / num_samples
             tc = frac * total_tc
-            # Circular orbit in XZ plane (Y-up)
+            # Camera orbits in XZ plane (Y-up), directly above centroid
             angle = 2.0 * math.pi * frac
-            ox = cx + self._orbit_radius * math.sin(angle)
-            oz = cz + self._orbit_radius * math.cos(angle)
+            ox = cx
+            oz = cz
             oy = cy + height
 
             translate_op.Set(Gf.Vec3d(ox, oy, oz), time=tc)
 
-            # Camera looks at centroid — compute yaw and pitch
-            dx = cx - ox
-            dz = cz - oz
-            yaw_deg   = math.degrees(math.atan2(dx, dz))
-            dist_xz   = math.sqrt(dx**2 + dz**2)
-            pitch_deg = math.degrees(math.atan2(cy - oy, dist_xz))
-            rotate_op.Set(Gf.Vec3f(float(pitch_deg), float(yaw_deg), 0.0), time=tc)
+            # X = -90° → camera looks straight down (-Y); Y rotates the image slowly
+            rotate_op.Set(Gf.Vec3f(-90.0, math.degrees(angle), 0.0), time=tc)
 
         log.info("Overview orbit baked (%d samples, duration %.1f s)", num_samples, self._duration)
 

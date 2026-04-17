@@ -29,13 +29,11 @@ ARROW_SCALE: float = 0.5              # Arrow length per (m/s) for velocity arro
 ACCEL_ARROW_SCALE: float = 0.1        # Arrow length per (m/s²) for accel arrows
 
 # ---------------------------------------------------------------------------
-# Terrain draping (PhysX raycast)
+# Terrain draping (RTX raycast)
 # ---------------------------------------------------------------------------
 TERRAIN_CAST_ORIGIN_Y: float      = 1000.0   # ray origin height above stage (m)
 TERRAIN_ABOVE_OFFSET_M: float     = 0.05     # lift above hit surface (m)
-TERRAIN_DRAPE_WARMUP_FRAMES: int  = 120      # frames before first drape (~2s at 60fps)
-TERRAIN_DRAPE_UPDATE_INTERVAL: int = 300     # frames between re-drape passes
-TERRAIN_DRAPE_MAX_PASSES: int     = 3        # stop after this many passes
+TERRAIN_DRAPE_UPDATE_INTERVAL: int = 300     # collect timeout (frames) for manual raycast pass
 CESIUM_TERRAIN_PATH: str = "/Cesium_World_Terrain"
 
 # ---------------------------------------------------------------------------
@@ -96,7 +94,7 @@ def check_dependencies() -> dict:
         "omni.kit.app",
         "omni.kit.viewport.utility",
         "omni.isaac.debug_draw",
-        "omni.physx",
+
     ):
         try:
             importlib.import_module(mod)

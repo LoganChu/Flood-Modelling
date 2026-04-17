@@ -13,7 +13,14 @@
       "Bash(ls -1 *.png *.html)",
       "Bash(ls -1 *.png)",
       "Bash(xargs grep:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "WebSearch",
+      "WebFetch(domain:docs.omniverse.nvidia.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:cesium.com)",
+      "Bash(gh api *)",
+      "WebFetch(domain:github.com)",
+      "Bash(PYTHONPATH=\"C:/Flood-Modelling/exts/drifter_vis/src;C:/Flood-Modelling/exts\" python -m pytest tests/ -q)"
     ]
   }
 }
