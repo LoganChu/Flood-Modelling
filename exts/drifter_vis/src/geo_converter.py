@@ -7,7 +7,7 @@ Isaac Sim's Y-up USD stage convention:
 
     ENU East  (+m) → USD  +X
     ENU Up    (+m) → USD  +Y   (GPS altitude relative to origin)
-    ENU North (+m) → USD  +Z
+    ENU North (+m) → USD  −Z   (right-handed Y-up: X×Y = East×Up = −North)
 
 Attitude (roll/pitch/yaw) is estimated from the GPS heading and
 accelerometer readings using a lightweight complementary filter —
@@ -52,7 +52,7 @@ class GeoResult:
     # USD stage coordinates (Y-up, 1 unit = 1 m)
     usd_x: np.ndarray      = field(default_factory=lambda: np.array([]))  # East
     usd_y: np.ndarray      = field(default_factory=lambda: np.array([]))  # Up + bob
-    usd_z: np.ndarray      = field(default_factory=lambda: np.array([]))  # North
+    usd_z: np.ndarray      = field(default_factory=lambda: np.array([]))  # −North (South)
 
     # Attitude angles (radians, for xformOp:rotateXYZ)
     roll: np.ndarray       = field(default_factory=lambda: np.array([]))
@@ -146,7 +146,7 @@ class GeoConverter:
         # for the draper to restore bobbing onto the drifter animation.
         usd_x = east.copy()
         usd_y = np.zeros_like(east)
-        usd_z = north.copy()
+        usd_z = -north.copy()  # right-handed Y-up: North → -Z
 
         return GeoResult(
             enu_east=east,
@@ -272,9 +272,9 @@ class GeoConverter:
 
         # Yaw from GPS heading (degrees → radians, rotate to USD convention)
         heading_deg = df["heading_deg"].fillna(0).values.astype(float)
-        # In USD Y-up with North=+Z, East=+X:
-        # heading 0° (North) → yaw 0 (looking along +Z)
-        # heading 90° (East) → yaw -90° (looking along +X)
+        # Right-handed Y-up: North=−Z, East=+X. Default object forward = −Z = North.
+        # heading 0°  (North) → yaw  0  (no rotation; already faces −Z = North)
+        # heading 90° (East)  → yaw −90° (rotate −90° around Y: −Z → +X)
         yaw = -np.deg2rad(heading_deg)
 
         return roll, pitch, yaw

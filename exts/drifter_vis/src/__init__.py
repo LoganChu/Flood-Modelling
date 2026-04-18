@@ -1,1 +1,4 @@
-from .extension import *
+try:
+    from .extension import *
+except Exception:
+    pass

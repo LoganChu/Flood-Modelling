@@ -80,7 +80,7 @@ class Animator:
         ay_world: Optional[np.ndarray] = None,
         az_world: Optional[np.ndarray] = None,
         fps: float = USD_STAGE_FPS,
-        speed_scale: float = 1.0,
+        speed_scale: float = 2.0,
     ) -> None:
         self._path = drifter_prim_path
         self._usd_x = np.asarray(usd_x) if usd_x is not None else np.array([])
@@ -230,13 +230,12 @@ class Animator:
 
         # ---- Velocity arrow (blue) — direction from yaw, length = speed ----
         yaw_r = float(self._yaw[row])
-        # USD Y-up: East=+X, North=+Z, yaw 0 = North
-        # velocity direction: vx = sin(-yaw) = -sin(yaw), vz = cos(yaw) (toward North)
-        # (yaw = -heading_deg in radians, where 0=North, 90=East)
-        # But we store yaw = -heading_rad, so heading 0 → yaw 0 → pointing +Z (North)
+        # Right-handed Y-up: East=+X, North=−Z. yaw=−heading_deg, default forward=−Z=North.
+        # heading 0° (North)  → heading_rad=0  → vx=0,  vz=−1 (toward −Z = North)
+        # heading 90° (East)  → heading_rad=π/2 → vx=1,  vz=0  (toward +X = East)
         heading_rad = -yaw_r
         vx = math.sin(heading_rad)
-        vz = math.cos(heading_rad)
+        vz = -math.cos(heading_rad)
 
         # Infer speed from position delta if possible
         speed = 0.0

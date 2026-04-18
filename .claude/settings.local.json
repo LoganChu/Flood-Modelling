@@ -20,7 +20,8 @@
       "WebFetch(domain:cesium.com)",
       "Bash(gh api *)",
       "WebFetch(domain:github.com)",
-      "Bash(PYTHONPATH=\"C:/Flood-Modelling/exts/drifter_vis/src;C:/Flood-Modelling/exts\" python -m pytest tests/ -q)"
+      "Bash(PYTHONPATH=\"C:/Flood-Modelling/exts/drifter_vis/src;C:/Flood-Modelling/exts\" python -m pytest tests/ -q)",
+      "Bash(conda run *)"
     ]
   }
 }

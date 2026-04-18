@@ -3,7 +3,6 @@ Unit tests for GeoConverter.
 Run without Isaac Sim:  pytest tests/ -v
 """
 
-import sys
 import math
 from pathlib import Path
 
@@ -11,14 +10,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-_EXT_ROOT = Path(__file__).resolve().parent.parent
-if str(_EXT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_EXT_ROOT))
+from drifter_vis.src.geo_converter import GeoConverter, GeoResult
+from drifter_vis.src.data_loader import DrifterDataLoader
 
-from drifter_vis.geo_converter import GeoConverter, GeoResult
-from drifter_vis.data_loader import DrifterDataLoader
-
-REAL_CSV = Path(__file__).resolve().parents[4] / "data" / "enoFeb16th.csv"
+REAL_CSV = Path(__file__).resolve().parent.parent / "exts" / "drifter_vis" / "data" / "enoFeb16th.csv"
 
 
 # ---------------------------------------------------------------------------
@@ -77,24 +72,23 @@ class TestDirectionalDisplacement:
         assert result.usd_x[1] > 0.0
 
     def test_north_displacement(self):
-        """Moving north (increasing lat) → positive enu_north / usd_z."""
+        """Moving north (increasing lat) → positive enu_north, negative usd_z (North=−Z)."""
         df = _make_df([36.079, 36.080], [-79.008, -79.008], [130.0, 130.0])
         result = GeoConverter(use_pyproj=False).convert(df)
         assert result.enu_north[1] > 0.0
-        assert result.usd_z[1] > 0.0
+        assert result.usd_z[1] < 0.0
 
-    def test_altitude_maps_to_usd_y(self):
-        """USD Y (baseline, without bobbing) should equal altitude delta."""
+    def test_usd_y_is_flat_baseline(self):
+        """usd_y is always 0.0 — terrain draping sets actual heights at runtime."""
         df = _make_df(
             [36.079, 36.079], [-79.008, -79.008],
             [130.0, 135.0],
-            times_ms=[0, 0],  # same time → bob_y is same → delta is pure alt
         )
         result = GeoConverter(use_pyproj=False).convert(df)
-        # usd_y[1] - usd_y[0] = (up[1]+bob[1]) - (up[0]+bob[0])
-        # Since times are identical, bob_y[0]==bob_y[1], so delta = enu_up delta
-        delta_y = result.usd_y[1] - result.usd_y[0]
-        assert delta_y == pytest.approx(5.0, abs=0.01)
+        assert result.usd_y[0] == pytest.approx(0.0)
+        assert result.usd_y[1] == pytest.approx(0.0)
+        # Altitude delta is preserved in enu_up, not usd_y
+        assert result.enu_up[1] - result.enu_up[0] == pytest.approx(5.0, abs=0.01)
 
 
 class TestSphericalScale:

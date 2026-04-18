@@ -212,10 +212,10 @@ class DrifterUIPanel:
                 min=0.1, max=10.0, step=0.1, width=200,
                 tooltip="Playback speed multiplier",
             )
-            self._speed_slider.model.set_value(1.0)
+            self._speed_slider.model.set_value(2.0)
             self._speed_slider.model.add_value_changed_fn(self._on_speed_changed)
             ui.Spacer(width=4)
-            self._speed_label = ui.Label("1.0×", width=40)
+            self._speed_label = ui.Label("2.0×", width=40)
 
     def _build_frame_row(self) -> None:
         with ui.HStack(height=24):

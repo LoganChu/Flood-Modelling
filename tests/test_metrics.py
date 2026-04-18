@@ -12,7 +12,6 @@ Test style mirrors test_data_loader.py / test_geo_converter.py:
 from __future__ import annotations
 
 import math
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Tuple
@@ -21,17 +20,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-_EXT_ROOT = Path(__file__).resolve().parent.parent
-if str(_EXT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_EXT_ROOT))
-
-from drifter_vis.metrics import (
+from drifter_vis.src.metrics import (
     DrifterMetrics,
     MetricsConfig,
     MetricsResult,
 )
 
-REAL_CSV = Path(__file__).resolve().parents[4] / "data" / "enoFeb16th.csv"
+REAL_CSV = Path(__file__).resolve().parent.parent / "exts" / "drifter_vis" / "data" / "enoFeb16th.csv"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -512,10 +507,10 @@ class TestRealCSVIntegration:
         if not REAL_CSV.exists():
             pytest.skip("Real CSV not available")
 
-        from drifter_vis.data_loader import DrifterDataLoader
-        from drifter_vis.geo_converter import GeoConverter
-        from drifter_vis.state_estimator import StateEstimator
-        from drifter_vis.physics_validator import PhysicsValidator
+        from drifter_vis.src.data_loader import DrifterDataLoader
+        from drifter_vis.src.geo_converter import GeoConverter
+        from drifter_vis.src.state_estimator import StateEstimator
+        from drifter_vis.src.physics_validator import PhysicsValidator
 
         df = DrifterDataLoader().load(REAL_CSV)
         geo = GeoConverter().convert(df)

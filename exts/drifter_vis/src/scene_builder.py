@@ -397,9 +397,9 @@ class SceneBuilder:
         traj = UsdGeom.BasisCurves.Define(stage, TRAJECTORY_PATH)
         traj.GetTypeAttr().Set(UsdGeom.Tokens.linear)
 
-        # Points: (east→X, 0.0→Y, north→Z)
+        # Points: (east→X, 0.0→Y, −north→Z)  right-handed Y-up: North = −Z
         # Y is flat initially; TerrainDraper will update with terrain heights
-        pts = [Gf.Vec3f(float(e), 0.0, float(n))
+        pts = [Gf.Vec3f(float(e), 0.0, -float(n))
                for e, n in zip(east_arr, north_arr)]
         traj.GetPointsAttr().Set(Vt.Vec3fArray(pts))
         traj.GetCurveVertexCountsAttr().Set(Vt.IntArray([len(pts)]))
@@ -427,7 +427,7 @@ class SceneBuilder:
         traj = UsdGeom.BasisCurves.Define(stage, TRAJECTORY_PHYSICS_PATH)
         traj.GetTypeAttr().Set(UsdGeom.Tokens.linear)
 
-        pts = [Gf.Vec3f(float(e), 0.3, float(n))
+        pts = [Gf.Vec3f(float(e), 0.3, -float(n))
                for e, n in zip(east_arr, north_arr)]  # offset +0.3m Y
         traj.GetPointsAttr().Set(Vt.Vec3fArray(pts))
         traj.GetCurveVertexCountsAttr().Set(Vt.IntArray([len(pts)]))
@@ -452,7 +452,7 @@ class SceneBuilder:
         traj = UsdGeom.BasisCurves.Define(stage, TRAJECTORY_EKF_PATH)
         traj.GetTypeAttr().Set(UsdGeom.Tokens.linear)
 
-        pts = [Gf.Vec3f(float(e), 0.6, float(n))
+        pts = [Gf.Vec3f(float(e), 0.6, -float(n))
                for e, n in zip(east_arr, north_arr)]
         traj.GetPointsAttr().Set(Vt.Vec3fArray(pts))
         traj.GetCurveVertexCountsAttr().Set(Vt.IntArray([len(pts)]))
@@ -513,7 +513,7 @@ class SceneBuilder:
         north_min = float(north_arr.min())
         north_max = float(north_arr.max())
         cx = float(east_arr[0])
-        cz = float(north_arr[0])
+        cz = -float(north_arr[0])
         extent = max(east_max - east_min, north_max - north_min)
         orbit_h = extent * 1.5
 

@@ -3,7 +3,6 @@ Unit tests for DrifterDataLoader.
 Run without Isaac Sim:  pytest tests/ -v
 """
 
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -11,17 +10,13 @@ import pandas as pd
 import pytest
 
 # Resolve package root so tests can be run from any directory
-_EXT_ROOT = Path(__file__).resolve().parent.parent
-if str(_EXT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_EXT_ROOT))
-
-from drifter_vis.data_loader import (
+from drifter_vis.src.data_loader import (
     DataLoadError,
     DrifterDataLoader,
     REQUIRED_COLUMNS,
 )
 
-REAL_CSV = Path(__file__).resolve().parents[4] / "data" / "enoFeb16th.csv"
+REAL_CSV = Path(__file__).resolve().parent.parent / "exts" / "drifter_vis" / "data" / "enoFeb16th.csv"
 
 
 # ---------------------------------------------------------------------------

@@ -268,7 +268,7 @@ class TerrainDraper:
         n = len(self._east_arr)
         rays = [
             _rtx_mod.Ray(
-                (float(self._east_arr[i]), TERRAIN_CAST_ORIGIN_Y, float(self._north_arr[i])),
+                (float(self._east_arr[i]), TERRAIN_CAST_ORIGIN_Y, -float(self._north_arr[i])),
                 (0.0, -1.0, 0.0),
             )
             for i in range(n)

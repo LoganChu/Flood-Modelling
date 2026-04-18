@@ -12,7 +12,6 @@ Test style mirrors test_data_loader.py / test_geo_converter.py:
 from __future__ import annotations
 
 import math
-import sys
 from pathlib import Path
 from typing import Tuple
 
@@ -20,18 +19,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-# Make the extension root importable without Isaac Sim on sys.path
-_EXT_ROOT = Path(__file__).resolve().parent.parent
-if str(_EXT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_EXT_ROOT))
-
-from drifter_vis.state_estimator import (
+from drifter_vis.src.state_estimator import (
     EKFConfig,
     StateEstimator,
     _EKFState,
 )
 
-REAL_CSV = Path(__file__).resolve().parents[4] / "data" / "enoFeb16th.csv"
+REAL_CSV = Path(__file__).resolve().parent.parent / "exts" / "drifter_vis" / "data" / "enoFeb16th.csv"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -460,8 +454,8 @@ class TestRealCSVIntegration:
             pytest.skip("Real CSV not available")
 
         # Import the full pipeline (data_loader, geo_converter) from the same package
-        from drifter_vis.data_loader import DrifterDataLoader
-        from drifter_vis.geo_converter import GeoConverter
+        from drifter_vis.src.data_loader import DrifterDataLoader
+        from drifter_vis.src.geo_converter import GeoConverter
 
         loader = DrifterDataLoader()
         df = loader.load(REAL_CSV)
@@ -491,8 +485,8 @@ class TestRealCSVIntegration:
         inter-segment jumps at millis() resets contaminating the metric.
         """
         df, ekf_df, _ = ekf_result
-        from drifter_vis.geo_converter import GeoConverter
-        from drifter_vis.data_loader import DrifterDataLoader
+        from drifter_vis.src.geo_converter import GeoConverter
+        from drifter_vis.src.data_loader import DrifterDataLoader
         loader = DrifterDataLoader()
         df2 = loader.load(REAL_CSV)
         geo = GeoConverter().convert(df2)
