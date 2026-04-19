@@ -23,7 +23,12 @@
       "Bash(PYTHONPATH=\"C:/Flood-Modelling/exts/drifter_vis/src;C:/Flood-Modelling/exts\" python -m pytest tests/ -q)",
       "Bash(conda run *)",
       "Read(//c/Users/s-lch/OneDrive/Documents/Kit/shared/capture/**)",
-      "Bash(ffmpeg -version)"
+      "Bash(ffmpeg -version)",
+      "Bash(mkdir -p C:/Flood-Modelling/exts/drifter_vis/data/enoFeb16th 'C:/Flood-Modelling/exts/drifter_vis/data/enoM30\\(1\\)' 'C:/Flood-Modelling/exts/drifter_vis/data/enoM30\\(2\\)' 'C:/Flood-Modelling/exts/drifter_vis/data/enoM30\\(4\\)')",
+      "Bash(mv C:/Flood-Modelling/exts/drifter_vis/data/enoFeb16th.csv C:/Flood-Modelling/exts/drifter_vis/data/enoFeb16th/)",
+      "Bash(mv C:/Flood-Modelling/exts/drifter_vis/data/enoFeb16th_smoothed.csv C:/Flood-Modelling/exts/drifter_vis/data/enoFeb16th/)",
+      "Bash(mv C:/Flood-Modelling/exts/drifter_vis/data/enoFeb16th_smoothed_run1.csv C:/Flood-Modelling/exts/drifter_vis/data/enoFeb16th/)",
+      "Bash(mv 'C:/Flood-Modelling/exts/drifter_vis/data/enoM30\\(1\\).csv' 'C:/Flood-Modelling/exts/drifter_vis/data/enoM30\\(1\\)/')"
     ]
   }
 }
