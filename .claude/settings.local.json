@@ -21,7 +21,9 @@
       "Bash(gh api *)",
       "WebFetch(domain:github.com)",
       "Bash(PYTHONPATH=\"C:/Flood-Modelling/exts/drifter_vis/src;C:/Flood-Modelling/exts\" python -m pytest tests/ -q)",
-      "Bash(conda run *)"
+      "Bash(conda run *)",
+      "Read(//c/Users/s-lch/OneDrive/Documents/Kit/shared/capture/**)",
+      "Bash(ffmpeg -version)"
     ]
   }
 }
