@@ -363,21 +363,3 @@ metrics:
 
 ---
 
-## Resume bullets
-
-```
-• Designed a 6-layer sensor digital twin in NVIDIA Isaac Sim integrating GPS and 9-axis IMU
-  data from a custom-built Arduino drifter; implemented WGS84→ENU coordinate transforms
-  (< 0.1 m error), attitude estimation, and a forward-Euler buoyancy/drag dynamics model
-  validated against 3,553 real-world samples across an 18-minute river deployment.
-
-• Architected an EKF-based sensor fusion pipeline (state: [x, y, vx, vy, ax, ay]) fusing
-  GPS position/velocity with IMU acceleration; incorporated Mahalanobis-distance outlier
-  gating, per-segment drift detection, and quantitative evaluation metrics (trajectory RMSE,
-  velocity error < 0.1 m/s, drift divergence) benchmarked against raw GPS baseline.
-
-• Built a physics-vs-sensor validation framework computing per-point trajectory discrepancy
-  between a Newton drag/buoyancy simulation and ground-truth GPS paths; visualised
-  sim-to-real divergence in georeferenced Cesium terrain inside Isaac Sim, achieving
-  < 1 s pre-bake time for 3,500+ trajectory samples and interactive timeline scrubbing.
-```
