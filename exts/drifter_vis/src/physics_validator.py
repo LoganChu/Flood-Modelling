@@ -219,24 +219,21 @@ class PhysicsValidator:
             return
 
         stage = omni.usd.get_context().get_stage()
-        prim = stage.GetPrimAtPath(TRAJECTORY_PHYSICS_PATH)
-        if not prim.IsValid():
-            log.debug("Physics trajectory prim not found — skipped")
-            return
+        curves = UsdGeom.BasisCurves.Define(stage, TRAJECTORY_PHYSICS_PATH)
+        curves.GetTypeAttr().Set(UsdGeom.Tokens.linear)
 
-        # Update vertex colours
-        curves = UsdGeom.BasisCurves(prim)
-        colours = [Gf.Vec3f(*discrepancy_to_rgb(float(d))) for d in discrepancy]
-        curves.GetDisplayColorAttr().Set(Vt.Vec3fArray(colours))
-
-        # Update point positions (Y is 0.3 for visual separation)
         pts = [
-            Gf.Vec3f(float(e), 0.3, float(n))
+            Gf.Vec3f(float(e), 0.3, -float(n))
             for e, n in zip(sim_east, sim_north)
         ]
         curves.GetPointsAttr().Set(Vt.Vec3fArray(pts))
+        curves.GetCurveVertexCountsAttr().Set(Vt.IntArray([len(pts)]))
 
-        log.debug("Physics trajectory updated")
+        colours = [Gf.Vec3f(*discrepancy_to_rgb(float(d))) for d in discrepancy]
+        curves.CreateDisplayColorAttr(Vt.Vec3fArray(colours))
+        curves.CreateWidthsAttr(Vt.FloatArray([0.05] * len(pts)))
+
+        log.debug("Physics trajectory created (%d points)", len(pts))
 
     # ------------------------------------------------------------------
     # Internal helpers

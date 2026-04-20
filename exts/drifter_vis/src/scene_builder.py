@@ -404,9 +404,15 @@ class SceneBuilder:
         traj.GetPointsAttr().Set(Vt.Vec3fArray(pts))
         traj.GetCurveVertexCountsAttr().Set(Vt.IntArray([len(pts)]))
 
-        # Vertex colours — speed gradient
-        max_spd = float(np.max(speeds)) if len(speeds) > 0 else 1.0
-        colours = [Gf.Vec3f(*speed_to_rgb(float(s), max_spd)) for s in speeds]
+        # Vertex colours — speed gradient, percentile-stretched so GPS speed
+        # spikes don't compress the real data range into the dark-blue end.
+        if len(speeds) > 0:
+            lo = float(np.percentile(speeds, 5))
+            hi = float(np.percentile(speeds, 95))
+            rng = max(hi - lo, 1e-6)
+        else:
+            lo, rng = 0.0, 1.0
+        colours = [Gf.Vec3f(*speed_to_rgb(float(s) - lo, rng)) for s in speeds]
         traj.CreateDisplayColorAttr(Vt.Vec3fArray(colours))
         traj.CreateWidthsAttr(Vt.FloatArray([0.05] * len(pts)))
 
