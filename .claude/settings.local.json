@@ -28,7 +28,8 @@
       "Bash(mv C:/Flood-Modelling/exts/drifter_vis/data/enoFeb16th.csv C:/Flood-Modelling/exts/drifter_vis/data/enoFeb16th/)",
       "Bash(mv C:/Flood-Modelling/exts/drifter_vis/data/enoFeb16th_smoothed.csv C:/Flood-Modelling/exts/drifter_vis/data/enoFeb16th/)",
       "Bash(mv C:/Flood-Modelling/exts/drifter_vis/data/enoFeb16th_smoothed_run1.csv C:/Flood-Modelling/exts/drifter_vis/data/enoFeb16th/)",
-      "Bash(mv 'C:/Flood-Modelling/exts/drifter_vis/data/enoM30\\(1\\).csv' 'C:/Flood-Modelling/exts/drifter_vis/data/enoM30\\(1\\)/')"
+      "Bash(mv 'C:/Flood-Modelling/exts/drifter_vis/data/enoM30\\(1\\).csv' 'C:/Flood-Modelling/exts/drifter_vis/data/enoM30\\(1\\)/')",
+      "Bash(xargs wc *)"
     ]
   }
 }

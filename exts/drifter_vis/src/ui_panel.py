@@ -60,6 +60,7 @@ class DrifterUIPanel:
     on_seek       : callback(frame: int) — scrubber moved
     on_camera     : callback(mode_name: str) — camera dropdown changed
     on_physics_toggled : callback(enabled: bool) — physics checkbox toggled
+    on_ekf_toggled     : callback(enabled: bool) — EKF checkbox toggled
     on_raycast    : callback() — called when "Raycast Terrain" is pressed
     """
 
@@ -80,6 +81,7 @@ class DrifterUIPanel:
         on_seek:            Optional[Callable[[int], None]]  = None,
         on_camera:          Optional[Callable[[str], None]]  = None,
         on_physics_toggled: Optional[Callable[[bool], None]] = None,
+        on_ekf_toggled:     Optional[Callable[[bool], None]] = None,
         on_raycast:         Optional[Callable[[], None]]     = None,
     ) -> None:
         self._on_load_csv        = on_load_csv        or (lambda p: None)
@@ -91,6 +93,7 @@ class DrifterUIPanel:
         self._on_seek            = on_seek            or (lambda f: None)
         self._on_camera          = on_camera          or (lambda m: None)
         self._on_physics_toggled = on_physics_toggled or (lambda e: None)
+        self._on_ekf_toggled     = on_ekf_toggled     or (lambda e: None)
         self._on_raycast         = on_raycast         or (lambda: None)
 
         # Internal state
@@ -171,6 +174,7 @@ class DrifterUIPanel:
                 ui.Separator()
                 self._build_camera_row()
                 self._build_physics_row()
+                self._build_ekf_row()
                 self._build_raycast_row()
                 ui.Separator()
                 self._build_readouts()
@@ -243,6 +247,14 @@ class DrifterUIPanel:
             cb = ui.CheckBox()
             cb.model.add_value_changed_fn(
                 lambda m: self._on_physics_toggled(m.get_value_as_bool())
+            )
+
+    def _build_ekf_row(self) -> None:
+        with ui.HStack(height=24):
+            ui.Label("EKF Filtering:", width=140)
+            cb = ui.CheckBox()
+            cb.model.add_value_changed_fn(
+                lambda m: self._on_ekf_toggled(m.get_value_as_bool())
             )
 
     def _build_raycast_row(self) -> None:

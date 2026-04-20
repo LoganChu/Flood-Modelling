@@ -46,11 +46,12 @@ from .scene_builder    import SceneBuilder
 from .animator         import Animator
 from .camera_manager   import CameraManager, CameraMode
 from .physics_validator import PhysicsValidator, DrifterPhysicsParams
+from .state_estimator  import StateEstimator
 from .ui_panel         import DrifterUIPanel
 from .terrain_draper   import TerrainDraper
 from .utils            import (
     USD_STAGE_FPS, check_dependencies,
-    TRAJECTORY_PATH, TRAJECTORY_PHYSICS_PATH,
+    TRAJECTORY_PATH, TRAJECTORY_PHYSICS_PATH, TRAJECTORY_EKF_PATH,
 )
 
 _DEFAULT_CSV = str(
@@ -110,6 +111,7 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
         # Load last CSV path if available, otherwise use default
         self._csv_path: str = _load_last_csv_path() or _DEFAULT_CSV
         self._physics_mode: bool = False
+        self._ekf_mode:     bool = False
         self._prebake_mode: bool = True
 
         deps = check_dependencies()
@@ -178,6 +180,7 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
             on_seek            = self._on_seek,
             on_camera          = self._on_camera_changed,
             on_physics_toggled = self._on_physics_toggled,
+            on_ekf_toggled     = self._on_ekf_toggled,
             on_raycast         = self._on_raycast,
         )
         self._panel.show()
@@ -214,6 +217,15 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
         converter = GeoConverter()
         geo = converter.convert(df)
 
+        # Step 2b: EKF state estimation (optional)
+        ekf_east = ekf_north = None
+        if self._ekf_mode:
+            panel.set_status("Step 2b/6: Running EKF state estimator…")
+            estimator = StateEstimator()
+            ekf_df = estimator.run(df, geo.enu_east, geo.enu_north)
+            ekf_east  = ekf_df["x_filt"].values
+            ekf_north = ekf_df["y_filt"].values
+
         # Step 3: Build USD scene
         panel.set_status("Step 3/6: Building USD scene…")
         # Clear selection so PhysX manipulator doesn't hold stale null-prim references
@@ -229,6 +241,8 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
             east_arr  = geo.enu_east,
             north_arr = geo.enu_north,
             speeds    = df["speed_ms"].values,
+            ekf_east  = ekf_east,
+            ekf_north = ekf_north,
         )
 
         # Step 4: Animation
@@ -296,6 +310,8 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
         curve_paths = [(TRAJECTORY_PATH, 0.0)]
         if self._physics_mode:
             curve_paths.append((TRAJECTORY_PHYSICS_PATH, 0.3))
+        if self._ekf_mode:
+            curve_paths.append((TRAJECTORY_EKF_PATH, 0.6))
 
         if self._draper is not None:
             self._draper.stop()
@@ -362,6 +378,12 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
         log.info("Physics validation: %s", "ON" if enabled else "OFF")
         if enabled and self._loader is not None:
             # Trigger a rebuild to include physics trajectory
+            self._build_pipeline()
+
+    def _on_ekf_toggled(self, enabled: bool) -> None:
+        self._ekf_mode = enabled
+        log.info("EKF filtering: %s", "ON" if enabled else "OFF")
+        if self._loader is not None:
             self._build_pipeline()
 
     def _on_raycast(self) -> None:
