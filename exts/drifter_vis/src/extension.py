@@ -291,17 +291,22 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
         # Step 6: Physics validation (optional)
         if self._physics_mode:
             panel.set_status("Step 6/6: Running physics simulation…")
-            self._validator = PhysicsValidator(params=DrifterPhysicsParams())
-            sim_east, sim_north = self._validator.simulate(
-                df, geo.enu_east, geo.enu_north,
-            )
-            discrepancy = self._validator.compute_discrepancy(
-                geo.enu_east, geo.enu_north, sim_east, sim_north,
-            )
-            self._validator.bake_physics_trajectory(
-                sim_east, sim_north,
-                discrepancy, df["time_s"].values, fps=USD_STAGE_FPS,
-            )
+            try:
+                self._validator = PhysicsValidator(params=DrifterPhysicsParams())
+                sim_east, sim_north = self._validator.simulate(
+                    df, geo.enu_east, geo.enu_north,
+                )
+                discrepancy = self._validator.compute_discrepancy(
+                    geo.enu_east, geo.enu_north, sim_east, sim_north,
+                )
+                self._validator.bake_physics_trajectory(
+                    sim_east, sim_north,
+                    discrepancy, df["time_s"].values, fps=USD_STAGE_FPS,
+                )
+            except Exception as exc:
+                panel.set_status(f"Physics error: {exc}")
+                log.error("Physics simulation failed: %s", exc, exc_info=True)
+                return
         else:
             panel.set_status("Step 6/6: Physics skipped (enable via checkbox)")
 

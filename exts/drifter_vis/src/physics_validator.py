@@ -120,7 +120,8 @@ class PhysicsValidator:
         """
         n = len(df)
         p = self.params
-        dt_arr = df["dt_s"].values.astype(float)
+        dt_arr  = df["dt_s"].values.astype(float)
+        seg_arr = df["segment_id"].values if "segment_id" in df.columns else np.zeros(n)
 
         # ---- Initial conditions ----
         sim_east  = np.zeros(n)
@@ -136,32 +137,46 @@ class PhysicsValidator:
         curr_x, curr_z = self._estimate_current(df)
         log.debug("River current: cx=%.3f  cz=%.3f (m/s)", curr_x, curr_z)
 
+        # Drag coefficient (precomputed — constant for all steps)
+        # F_drag = k_drag * |v_rel|^2,  k_drag = 0.5 * rho * Cd * A
+        k_drag = 0.5 * p.rho_water * p.Cd * p.frontal_area
+
         # ---- Integration loop ----
         for i in range(1, n):
+            # Reset at segment boundaries (millis() wrap-around)
+            if seg_arr[i] != seg_arr[i - 1]:
+                sim_east[i]  = float(rec_east[i])
+                sim_north[i] = float(rec_north[i])
+                vx, vz = self._initial_velocity(df.iloc[i:])
+                continue
+
             dt = float(dt_arr[i])
             if dt <= 0:
                 sim_east[i]  = sim_east[i-1]
                 sim_north[i] = sim_north[i-1]
                 continue
 
-            # Relative velocity w.r.t. river current
             rel_vx = vx - curr_x
             rel_vz = vz - curr_z
             rel_spd = math.sqrt(rel_vx**2 + rel_vz**2)
 
-            # Drag force magnitude
             if rel_spd > 1e-6:
-                f_drag = 0.5 * p.rho_water * p.Cd * p.frontal_area * rel_spd**2
-                ax = -f_drag * rel_vx / rel_spd / p.mass_kg
-                az = -f_drag * rel_vz / rel_spd / p.mass_kg
+                # Analytical solution for quadratic drag — unconditionally stable.
+                # ODE: du/dt = -(k/m)*|u|*u  where u = v - current
+                # Exact velocity:  u(T) = u0 / (1 + k*|u0|*T/m)
+                # Exact position:  Δx = current*T + (u0/|u0|)*(m/k)*ln(1+k*|u0|*T/m)
+                decay      = 1.0 + k_drag * rel_spd * dt / p.mass_kg
+                vx         = curr_x + rel_vx / decay
+                vz         = curr_z + rel_vz / decay
+                log_factor = (p.mass_kg / k_drag) * math.log(decay)
+                sim_east[i]  = sim_east[i-1] + curr_x * dt + (rel_vx / rel_spd) * log_factor
+                sim_north[i] = sim_north[i-1] + curr_z * dt + (rel_vz / rel_spd) * log_factor
             else:
-                ax = az = 0.0
-
-            # Euler step
-            vx += ax * dt
-            vz += az * dt
-            sim_east[i]  = sim_east[i-1]  + vx * dt
-            sim_north[i] = sim_north[i-1] + vz * dt
+                # At equilibrium — drift with river current
+                vx = curr_x
+                vz = curr_z
+                sim_east[i]  = sim_east[i-1] + curr_x * dt
+                sim_north[i] = sim_north[i-1] + curr_z * dt
 
         log.info(
             "Physics simulation complete: final pos (%.1f, %.1f) m",
