@@ -10,7 +10,6 @@ USD stage structure:
       /River
         WaterPlane           (fallback flat water surface)
         Trajectory           (BasisCurves — speed-gradient colour)
-        TrajectoryPhysics    (BasisCurves — discrepancy colour, optional)
       /Drifter
         DrifterXform         (animated Xform)
           DrifterMesh        (Sphere primitive)
@@ -35,8 +34,8 @@ import numpy as np
 
 from .utils import (
     WORLD_PATH, CESIUM_PATH, RIVER_PATH, DRIFTER_PATH, DRIFTER_XFORM_PATH,
-    CAMERAS_PATH, LIGHTING_PATH, TRAJECTORY_PATH, TRAJECTORY_PHYSICS_PATH,
-    TRAJECTORY_EKF_PATH, WATER_PLANE_PATH, speed_to_rgb, discrepancy_to_rgb,
+    CAMERAS_PATH, LIGHTING_PATH, TRAJECTORY_PATH,
+    TRAJECTORY_EKF_PATH, WATER_PLANE_PATH, speed_to_rgb,
     check_dependencies,
 )
 
@@ -70,7 +69,6 @@ class SceneBuilder:
     DRIFTER_PATH = DRIFTER_PATH
     CAMERAS_PATH = CAMERAS_PATH
     TRAJECTORY_PATH = TRAJECTORY_PATH
-    TRAJECTORY_PHYSICS_PATH = TRAJECTORY_PHYSICS_PATH
 
     # Drifter geometry (sphere)
     BUOY_RADIUS_M: float = 0.08
@@ -98,9 +96,6 @@ class SceneBuilder:
         east_arr: np.ndarray,
         north_arr: np.ndarray,
         speeds: np.ndarray,
-        physics_east: Optional[np.ndarray] = None,
-        physics_north: Optional[np.ndarray] = None,
-        discrepancy: Optional[np.ndarray] = None,
         ekf_east: Optional[np.ndarray] = None,
         ekf_north: Optional[np.ndarray] = None,
     ) -> None:
@@ -110,10 +105,8 @@ class SceneBuilder:
         Parameters
         ----------
         east_arr, north_arr : ENU coordinates (metres), arrays of shape (N,)
-        speeds          : speed_ms values, array of shape (N,), used for trajectory colour
-        physics_east/north : optional simulated ENU coordinates for physics trajectory
-        discrepancy     : optional metres-error array for physics trajectory colour
-        ekf_east/north  : optional EKF-filtered ENU positions for the EKF overlay
+        speeds              : speed_ms values, array of shape (N,), used for trajectory colour
+        ekf_east/north      : optional EKF-filtered ENU positions for the EKF overlay
 
         Note: All trajectories are initially flat at Y=0. Terrain height draping
         is applied asynchronously via TerrainDraper after tiles load.
@@ -136,12 +129,6 @@ class SceneBuilder:
         self._build_trajectory(stage, east_arr, north_arr, speeds)
         self._build_drifter(stage)
         self._build_cameras(stage, east_arr, north_arr)
-
-        if physics_east is not None and discrepancy is not None:
-            self._build_physics_trajectory(
-                stage, physics_east, physics_north or np.zeros_like(physics_east),
-                discrepancy
-            )
 
         if ekf_east is not None and ekf_north is not None:
             self._build_ekf_trajectory(stage, ekf_east, ekf_north)
@@ -418,32 +405,6 @@ class SceneBuilder:
 
         log.debug("Trajectory curve created with %d points", len(pts))
 
-    def _build_physics_trajectory(
-        self,
-        stage,
-        east_arr: np.ndarray,
-        north_arr: np.ndarray,
-        discrepancy: np.ndarray,
-    ) -> None:
-        """Optional physics comparison trajectory, coloured by discrepancy.
-
-        Positioned 0.3 m above the GPS trajectory for visual separation.
-        Y values are initially at 0.3; TerrainDraper will update to terrain + 0.3.
-        """
-        traj = UsdGeom.BasisCurves.Define(stage, TRAJECTORY_PHYSICS_PATH)
-        traj.GetTypeAttr().Set(UsdGeom.Tokens.linear)
-
-        pts = [Gf.Vec3f(float(e), 0.3, -float(n))
-               for e, n in zip(east_arr, north_arr)]  # offset +0.3m Y
-        traj.GetPointsAttr().Set(Vt.Vec3fArray(pts))
-        traj.GetCurveVertexCountsAttr().Set(Vt.IntArray([len(pts)]))
-
-        colours = [Gf.Vec3f(*discrepancy_to_rgb(float(d))) for d in discrepancy]
-        traj.CreateDisplayColorAttr(Vt.Vec3fArray(colours))
-        traj.CreateWidthsAttr(Vt.FloatArray([0.05] * len(pts)))
-
-        log.debug("Physics trajectory created")
-
     def _build_ekf_trajectory(
         self,
         stage,
@@ -463,7 +424,7 @@ class SceneBuilder:
         traj.GetPointsAttr().Set(Vt.Vec3fArray(pts))
         traj.GetCurveVertexCountsAttr().Set(Vt.IntArray([len(pts)]))
 
-        # Constant green — visually distinct from GPS (viridis) and physics (orange)
+        # Constant green — visually distinct from GPS (viridis)
         colour = Gf.Vec3f(0.1, 0.8, 0.3)
         traj.CreateDisplayColorAttr(Vt.Vec3fArray([colour] * len(pts)))
         traj.CreateWidthsAttr(Vt.FloatArray([0.05] * len(pts)))

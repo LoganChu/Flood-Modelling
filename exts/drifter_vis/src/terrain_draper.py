@@ -70,7 +70,7 @@ class TerrainDraper:
     curve_paths : list[tuple[str, float]]
         List of (prim_path, extra_y_offset) pairs. Each pair identifies a
         BasisCurves prim and the vertical offset to apply (for visual separation).
-        Example: [(TRAJECTORY_PATH, 0.0), (TRAJECTORY_PHYSICS_PATH, 0.3), ...]
+        Example: [(TRAJECTORY_PATH, 0.0), (TRAJECTORY_EKF_PATH, 0.3), ...]
     bob_y_arr : Optional[np.ndarray]
         Optional sinusoidal bob offset array. If provided, the animator's Y is set to
         terrain_heights + base_offset + bob_y_arr. If None, bob is not restored.

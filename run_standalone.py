@@ -12,7 +12,7 @@ Two usage modes
 2. Headless / command-line using Isaac Sim's bundled Python:
    /path/to/isaac-sim/python.sh src/run_standalone.py \\
        --csv data/enoFeb16th_smoothed.csv \\
-       --fps 24 --speed 1.0 --physics
+       --fps 24 --speed 1.0
 
    Isaac Sim's Python has omni.*, pxr, etc. on sys.path already.
    Do NOT use the system Python — use the Kit-bundled interpreter.
@@ -74,7 +74,6 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument("--fps",   type=float, default=24.0,  help="USD stage fps (default 24)")
     p.add_argument("--speed", type=float, default=1.0,   help="Playback speed multiplier (default 1.0)")
-    p.add_argument("--physics",  action="store_true",    help="Run Newton physics validation")
     p.add_argument("--live",     action="store_true",    help="Live-update mode (default: pre-bake)")
     p.add_argument("--no-ui",    action="store_true",    help="Skip omni.ui panel (headless mode)")
     p.add_argument("--verbose",  action="store_true",    help="Enable DEBUG logging")
@@ -86,12 +85,11 @@ def _parse_args() -> argparse.Namespace:
 # ---------------------------------------------------------------------------
 
 def run(
-    csv_path:     str   = _DEFAULT_CSV,
-    fps:          float = 24.0,
-    speed_scale:  float = 1.0,
-    physics_mode: bool  = False,
-    live_mode:    bool  = False,
-    show_ui:      bool  = True,
+    csv_path:    str   = _DEFAULT_CSV,
+    fps:         float = 24.0,
+    speed_scale: float = 1.0,
+    live_mode:   bool  = False,
+    show_ui:     bool  = True,
 ) -> None:
     """
     Execute the full visualisation pipeline.
@@ -105,12 +103,11 @@ def run(
 
     Parameters
     ----------
-    csv_path     : absolute or relative path to the drifter CSV
-    fps          : USD timeline frames per second
-    speed_scale  : playback multiplier (0.1 – 10.0)
-    physics_mode : also run and visualise the Newton simulation
-    live_mode    : per-frame callback instead of pre-baking (slower)
-    show_ui      : create the omni.ui control panel
+    csv_path    : absolute or relative path to the drifter CSV
+    fps         : USD timeline frames per second
+    speed_scale : playback multiplier (0.1 – 10.0)
+    live_mode   : per-frame callback instead of pre-baking (slower)
+    show_ui     : create the omni.ui control panel
     """
     from drifter_vis.utils import check_dependencies
     from drifter_vis.data_loader import DrifterDataLoader
@@ -118,9 +115,6 @@ def run(
     from drifter_vis.scene_builder import SceneBuilder
     from drifter_vis.animator import Animator
     from drifter_vis.camera_manager import CameraManager, CameraMode
-    from drifter_vis.physics_validator import (
-        PhysicsValidator, DrifterPhysicsParams,
-    )
 
     deps = check_dependencies()
     log.info("Dependency check: %s", deps)
@@ -214,24 +208,7 @@ def run(
     cam_mgr.activate(CameraMode.OVERVIEW)
 
     # -----------------------------------------------------------------------
-    # 6. Physics validation (optional)
-    # -----------------------------------------------------------------------
-    if physics_mode:
-        log.info("Step 6/6: Newton physics simulation")
-        validator = PhysicsValidator(params=DrifterPhysicsParams())
-        sim_east, sim_north = validator.simulate(df, geo.enu_east, geo.enu_north)
-        discrepancy = validator.compute_discrepancy(
-            geo.enu_east, geo.enu_north, sim_east, sim_north,
-        )
-        validator.bake_physics_trajectory(
-            sim_east, sim_north, geo.enu_up,
-            discrepancy, df["time_s"].values, fps=fps, speed_scale=speed_scale,
-        )
-    else:
-        log.info("Step 6/6: Physics skipped (pass --physics to enable)")
-
-    # -----------------------------------------------------------------------
-    # 7. UI panel (optional)
+    # 6. UI panel (optional)
     # -----------------------------------------------------------------------
     if show_ui:
         try:
@@ -275,10 +252,9 @@ if __name__ == "__main__":
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     run(
-        csv_path     = args.csv,
-        fps          = args.fps,
-        speed_scale  = args.speed,
-        physics_mode = args.physics,
-        live_mode    = args.live,
-        show_ui      = not args.no_ui,
+        csv_path    = args.csv,
+        fps         = args.fps,
+        speed_scale = args.speed,
+        live_mode   = args.live,
+        show_ui     = not args.no_ui,
     )

@@ -495,8 +495,7 @@ class StateEstimator:
         the estimated bulk flow direction.
 
         The bulk flow direction is the median heading across all EKF-filtered
-        velocity vectors (robust estimator; consistent with PhysicsValidator's
-        _estimate_current approach).
+        velocity vectors (robust estimator using median heading).
 
         Near-zero-speed samples are never flagged (heading undefined).
 

@@ -47,7 +47,6 @@ BOB_FREQ_HZ: float = 0.8              # Bobbing oscillation frequency (Hz)
 # ---------------------------------------------------------------------------
 COLOUR_VELOCITY: Tuple[float, float, float] = (0.2, 0.5, 1.0)    # blue
 COLOUR_ACCEL: Tuple[float, float, float] = (1.0, 0.2, 0.2)       # red
-COLOUR_PHYSICS: Tuple[float, float, float] = (1.0, 0.6, 0.1)     # orange
 
 # USD prim paths (canonical)
 WORLD_PATH = "/World"
@@ -58,7 +57,6 @@ DRIFTER_XFORM_PATH = "/World/Drifter/DrifterXform"
 CAMERAS_PATH = "/World/Cameras"
 LIGHTING_PATH = "/World/Lighting"
 TRAJECTORY_PATH = "/World/River/Trajectory"
-TRAJECTORY_PHYSICS_PATH = "/World/River/TrajectoryPhysics"
 TRAJECTORY_EKF_PATH = "/World/River/TrajectoryEKF"
 WATER_PLANE_PATH = "/World/River/WaterPlane"
 
@@ -163,28 +161,6 @@ def speed_to_rgb(speed_ms: float, max_ms: float) -> Tuple[float, float, float]:
         g = 0.57 + s * (0.91 - 0.57)
         b = 0.55 + s * (0.14 - 0.55)
 
-    return (r, g, b)
-
-
-def discrepancy_to_rgb(
-    metres: float,
-    clamp: float = 5.0,
-) -> Tuple[float, float, float]:
-    """
-    Map a path discrepancy (metres) to a blue→red gradient.
-
-    0 m   → blue  (0.2, 0.4, 1.0)
-    clamp → red   (1.0, 0.1, 0.1)
-
-    Parameters
-    ----------
-    metres : discrepancy in metres
-    clamp  : value at which colour saturates to full red
-    """
-    t = _clamp(metres / max(clamp, 1e-6), 0.0, 1.0)
-    r = 0.2 + t * (1.0 - 0.2)
-    g = 0.4 + t * (0.1 - 0.4)
-    b = 1.0 + t * (0.1 - 1.0)
     return (r, g, b)
 
 

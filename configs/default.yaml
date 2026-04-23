@@ -20,21 +20,6 @@ ekf:
   mahalanobis_gate: 3.0
 
 # ---------------------------------------------------------------------------
-# Physics dynamics model  [physics_validator.py]
-# ---------------------------------------------------------------------------
-physics:
-  # Drifter physical parameters
-  mass_kg:      1.5     # estimated total mass of buoy
-  radius_m:     0.15    # half-diameter of cylindrical housing
-  height_m:     0.30    # cylinder height
-  Cd:           0.82    # drag coefficient (cylinder)
-  rho_water:    1000.0  # freshwater density (kg/m³)
-
-  # River current estimation
-  n_current_samples: 20    # number of early GPS samples used to estimate bulk flow
-  min_speed_ms:      0.10  # GPS speed threshold below which sample is ignored
-
-# ---------------------------------------------------------------------------
 # Noise characterisation and outlier rejection  [data_loader.py + state_estimator.py]
 # ---------------------------------------------------------------------------
 noise:

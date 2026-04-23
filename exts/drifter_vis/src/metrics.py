@@ -1,10 +1,9 @@
 """
 metrics.py — Quantitative evaluation of trajectory reconstruction quality.
 
-Compares three trajectory sources:
+Compares two trajectory sources:
     1. Raw GPS path (from GeoConverter)
     2. EKF-filtered path (from StateEstimator)
-    3. Physics-simulated path (from PhysicsValidator, optional)
 
 All values are in SI units (metres, m/s, m/s², 1/m) unless noted.
 
@@ -15,8 +14,6 @@ Metrics computed
                     (measures GPS noise removed by EKF; units: m)
     rmse_ekf      — RMSE between EKF path and a 3-point moving average of
                     itself (measures residual jitter in the filter; units: m)
-    rmse_physics  — RMSE between physics simulation and raw GPS path
-                    (measures physics model accuracy; units: m)
 
 - Filter improvement ratio:
     filter_improvement_ratio = rmse_raw_gps / rmse_ekf
@@ -30,10 +27,6 @@ Metrics computed
 
 - Path curvature:
     κ = |vx · az − vz · ax| / (vx² + vz²)^(3/2)  per sample (1/m)
-
-- Drift divergence:
-    Final Euclidean distance between physics simulation endpoint and GPS
-    endpoint (measures physics model drift over the full run; units: m)
 
 Robotics relevance
 ------------------
@@ -65,7 +58,6 @@ class MetricsConfig:
     rmse_report:                  bool  = True
     velocity_error_report:        bool  = True
     acceleration_residual_report: bool  = True
-    drift_divergence_report:      bool  = True
     filter_improvement_report:    bool  = True
 
     output_csv: str = "data/metrics.csv"
@@ -87,7 +79,6 @@ class MetricsConfig:
             rmse_report                  = bool(d.get("rmse_report",                  cls.rmse_report)),
             velocity_error_report        = bool(d.get("velocity_error_report",        cls.velocity_error_report)),
             acceleration_residual_report = bool(d.get("acceleration_residual_report", cls.acceleration_residual_report)),
-            drift_divergence_report      = bool(d.get("drift_divergence_report",      cls.drift_divergence_report)),
             filter_improvement_report    = bool(d.get("filter_improvement_report",    cls.filter_improvement_report)),
             output_csv                   = str( d.get("output_csv",                   cls.output_csv)),
             curvature_min_speed_ms       = float(d.get("min_speed_ms",               cls.curvature_min_speed_ms)),
@@ -106,7 +97,6 @@ class MetricsResult:
     # Trajectory RMSE (metres)
     rmse_raw_gps: float
     rmse_ekf: float
-    rmse_physics: Optional[float]
 
     # Filter improvement (dimensionless ratio; >1 = EKF smoother than GPS)
     filter_improvement_ratio: Optional[float]
@@ -122,9 +112,6 @@ class MetricsResult:
     # Per-sample path curvature (1/m) — stored as array for inspection
     curvature: np.ndarray
 
-    # Physics simulation endpoint divergence (metres)
-    drift_divergence: Optional[float]
-
     def to_dict(self) -> dict:
         """
         Flat dict suitable for a single-row CSV / pandas DataFrame.
@@ -138,18 +125,16 @@ class MetricsResult:
             high = float(np.mean(kappa > 0.5))
 
         return {
-            "rmse_raw_gps_m":            self.rmse_raw_gps,
-            "rmse_ekf_m":                self.rmse_ekf,
-            "rmse_physics_m":            self.rmse_physics,
-            "filter_improvement_ratio":  self.filter_improvement_ratio,
-            "velocity_error_mean_ms":    self.velocity_error_mean,
-            "velocity_error_std_ms":     self.velocity_error_std,
-            "accel_residual_mean_ms2":   self.accel_residual_mean,
-            "accel_residual_std_ms2":    self.accel_residual_std,
-            "curvature_mean_1pm":        float(np.mean(kappa)) if len(kappa) else float("nan"),
-            "curvature_std_1pm":         float(np.std(kappa))  if len(kappa) else float("nan"),
-            "curvature_high_fraction":   high,
-            "drift_divergence_m":        self.drift_divergence,
+            "rmse_raw_gps_m":           self.rmse_raw_gps,
+            "rmse_ekf_m":               self.rmse_ekf,
+            "filter_improvement_ratio": self.filter_improvement_ratio,
+            "velocity_error_mean_ms":   self.velocity_error_mean,
+            "velocity_error_std_ms":    self.velocity_error_std,
+            "accel_residual_mean_ms2":  self.accel_residual_mean,
+            "accel_residual_std_ms2":   self.accel_residual_std,
+            "curvature_mean_1pm":       float(np.mean(kappa)) if len(kappa) else float("nan"),
+            "curvature_std_1pm":        float(np.std(kappa))  if len(kappa) else float("nan"),
+            "curvature_high_fraction":  high,
         }
 
 
@@ -178,19 +163,16 @@ class DrifterMetrics:
         df: pd.DataFrame,
         geo,
         ekf_df: pd.DataFrame,
-        sim_east: Optional[np.ndarray] = None,
-        sim_north: Optional[np.ndarray] = None,
     ) -> MetricsResult:
         """
         Compute all enabled metrics.
 
         Parameters
         ----------
-        df      : cleaned DataFrame from DrifterDataLoader
-        geo     : GeoResult from GeoConverter (has .enu_east, .enu_north)
-        ekf_df  : output of StateEstimator.run() (has x_filt, y_filt,
-                  vx_filt, vz_filt, ax_filt, az_filt)
-        sim_east/north : PhysicsValidator output (optional)
+        df     : cleaned DataFrame from DrifterDataLoader
+        geo    : GeoResult from GeoConverter (has .enu_east, .enu_north)
+        ekf_df : output of StateEstimator.run() (has x_filt, y_filt,
+                 vx_filt, vz_filt, ax_filt, az_filt)
 
         Returns
         -------
@@ -204,14 +186,6 @@ class DrifterMetrics:
         # --- RMSE ---
         rmse_raw = self._compute_rmse(x_filt, y_filt, rec_east, rec_north)
         rmse_ekf = self._compute_ekf_smoothness(x_filt, y_filt)
-
-        rmse_physics: Optional[float] = None
-        if sim_east is not None and sim_north is not None:
-            rmse_physics = self._compute_rmse(
-                rec_east, rec_north,
-                np.asarray(sim_east, dtype=float),
-                np.asarray(sim_north, dtype=float),
-            )
 
         # --- Filter improvement ---
         filter_ratio: Optional[float] = None
@@ -234,26 +208,15 @@ class DrifterMetrics:
             self._config.curvature_min_speed_ms,
         )
 
-        # --- Drift divergence ---
-        drift_div: Optional[float] = None
-        if sim_east is not None and sim_north is not None:
-            drift_div = self._compute_drift_divergence(
-                rec_east, rec_north,
-                np.asarray(sim_east, dtype=float),
-                np.asarray(sim_north, dtype=float),
-            )
-
         result = MetricsResult(
             rmse_raw_gps             = rmse_raw,
             rmse_ekf                 = rmse_ekf,
-            rmse_physics             = rmse_physics,
             filter_improvement_ratio = filter_ratio,
             velocity_error_mean      = vel_mean,
             velocity_error_std       = vel_std,
             accel_residual_mean      = acc_mean,
             accel_residual_std       = acc_std,
             curvature                = kappa,
-            drift_divergence         = drift_div,
         )
 
         log.info(
@@ -306,7 +269,6 @@ class DrifterMetrics:
             "Trajectory RMSE",
             f"  Raw GPS (vs EKF reference): {_fmt(d['rmse_raw_gps_m'])} m",
             f"  EKF internal smoothness:    {_fmt(d['rmse_ekf_m'])} m",
-            f"  Physics simulation:         {_fmt(d['rmse_physics_m'])} m",
             "",
             f"Filter improvement ratio:     {_fmt(d['filter_improvement_ratio'])}×  (>1 = EKF smoother)",
             "",
@@ -322,8 +284,6 @@ class DrifterMetrics:
             f"  Mean:  {_fmt(d['curvature_mean_1pm'])} 1/m",
             f"  Std:   {_fmt(d['curvature_std_1pm'])} 1/m",
             f"  High-κ fraction (>{self._config.curvature_high_threshold:.2f} 1/m): {high_frac:.1%}",
-            "",
-            f"Drift divergence (physics endpoint): {_fmt(d['drift_divergence_m'])} m",
             "=" * 45,
         ]
         print("\n".join(lines))
@@ -342,9 +302,7 @@ class DrifterMetrics:
         """
         2-D RMSE: √(mean((Δe)² + (Δn)²)).
 
-        Used for:
-          rmse_raw_gps  — true=EKF path, pred=raw GPS (how much GPS noise EKF removes)
-          rmse_physics  — true=recorded GPS, pred=physics sim (physics model accuracy)
+        Used for rmse_raw_gps: true=EKF path, pred=raw GPS (how much GPS noise EKF removes)
         """
         de = pred_east  - true_east
         dn = pred_north - true_north
@@ -442,19 +400,3 @@ class DrifterMetrics:
             )
         return kappa.astype(float)
 
-    @staticmethod
-    def _compute_drift_divergence(
-        rec_east: np.ndarray,
-        rec_north: np.ndarray,
-        sim_east: np.ndarray,
-        sim_north: np.ndarray,
-    ) -> float:
-        """
-        Euclidean distance between the final recorded and simulated positions.
-
-        Quantifies how far the physics model has drifted from the actual
-        trajectory by the end of the run — a measure of model error accumulation.
-        """
-        de = float(sim_east[-1])  - float(rec_east[-1])
-        dn = float(sim_north[-1]) - float(rec_north[-1])
-        return float(np.sqrt(de ** 2 + dn ** 2))

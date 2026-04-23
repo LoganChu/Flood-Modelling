@@ -3,12 +3,11 @@
 ## What this is
 
 An NVIDIA Isaac Sim extension that implements a robotics-grade digital twin of a GPS/IMU river
-drifter. The primary engineering value is trajectory reconstruction, EKF-based state estimation,
-and physics-model validation against real sensor data — not the 3-D render. The Isaac Sim USD
-stage is the ground-truth inspection environment.
+drifter. The primary engineering value is trajectory reconstruction and EKF-based state estimation
+from real sensor data — not the 3-D render. The Isaac Sim USD stage is the ground-truth inspection
+environment.
 
-**Robotics domains covered:** Localization, State Estimation, Sensor Fusion, Perception,
-Motion Modeling, Controls/Dynamics, Sim-to-Real Validation.
+**Robotics domains covered:** Localization, State Estimation, Sensor Fusion, Perception.
 
 ---
 
@@ -41,9 +40,8 @@ Restart → **River Drifter → Load Visualisation**.
 |--------|-------|------------------|
 | `data_loader.py` | Sensor Ingestion | Raw sensor → clean DataFrame; dropout removal, unit normalisation, segment detection |
 | `geo_converter.py` | State Estimation | WGS84→ENU localization; roll/pitch/yaw from accel + GPS heading |
-| `state_estimator.py` | State Estimation | EKF `[x,y,vx,vy,ax,ay]` — GPS + IMU fusion *(planned Phase 3)* |
-| `physics_validator.py` | Motion Modeling + Validation | Forward-Euler buoyancy/drag dynamics; discrepancy vs recorded path |
-| `metrics.py` | Validation | RMSE, velocity error, drift divergence, filter improvement ratio *(planned Phase 4)* |
+| `state_estimator.py` | State Estimation | EKF `[x,y,vx,vy,ax,ay]` — GPS + IMU fusion |
+| `metrics.py` | Validation | RMSE, velocity error, filter improvement ratio, path curvature |
 | `scene_builder.py` | Visualization | USD stage: terrain, trajectory prims, drifter mesh |
 | `animator.py` | Visualization | Pre-bake USD time samples; per-frame debug-draw arrows |
 | `camera_manager.py` | Visualization | Overview orbit, chase, onboard cameras |
@@ -125,29 +123,6 @@ Process noise Q and measurement noise R are tunable in `configs/default.yaml` un
 
 ---
 
-## Physics dynamics model detail
-
-```
-State:   (east, north, vx, vz)
-Forces:  drag = 0.5·ρ·Cd·A·|v_rel|²·v̂_rel   (opposes relative motion vs river current)
-         buoyancy + gravity cancel (horizontal plane; drifter at equilibrium depth)
-Integrator: explicit forward Euler at recorded dt_s timesteps
-Current:    mean of first 20 GPS velocity vectors (bulk-flow proxy)
-```
-
-Physical parameters in `DrifterPhysicsParams` (and `configs/default.yaml`):
-- `mass_kg = 1.5`, `radius_m = 0.15`, `height_m = 0.30`, `Cd = 0.82`
-- Frontal area: `2r × h = 0.09 m²` (cylinder face)
-- Submerged volume: `π r² h / 2 = 0.0106 m³` (50 % submerged assumption)
-
-Discrepancy metric (per-point):
-```python
-disc = sqrt((sim_east - rec_east)² + (sim_north - rec_north)²)
-# logged: mean, max, 95th-percentile
-```
-
----
-
 ## USD baking pipeline
 
 ```
@@ -160,10 +135,6 @@ SceneBuilder.build()
 Animator.bake()
     → USD time samples for all 3,553 positions (< 1 s wall time)
     → Per-frame debug draw: velocity (blue) + acceleration (red) arrows
-PhysicsValidator.simulate()   (--physics flag)
-    → sim_east, sim_north
-    → compute_discrepancy()
-    → bake_physics_trajectory()  (orange→red overlay BasisCurves)
 ```
 
 USD timecode formula: `tc = time_s × fps / speed_scale` (default 24 fps, 1.0×).

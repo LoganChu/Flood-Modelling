@@ -18,7 +18,6 @@ Pipeline (triggered by "Build Scene" button or on_build() callback)
 4. Animator            : pre-bake USD time samples + register debug draw
 5. CameraManager       : create orbit camera, activate overview
 6. DrifterUIPanel      : supply DataFrame for live readouts
-7. PhysicsValidator    : (optional) simulate and bake comparison trajectory
 """
 
 from __future__ import annotations
@@ -45,13 +44,12 @@ from .geo_converter    import GeoConverter
 from .scene_builder    import SceneBuilder
 from .animator         import Animator
 from .camera_manager   import CameraManager, CameraMode
-from .physics_validator import PhysicsValidator, DrifterPhysicsParams
 from .state_estimator  import StateEstimator
 from .ui_panel         import DrifterUIPanel
 from .terrain_draper   import TerrainDraper
 from .utils            import (
     USD_STAGE_FPS, check_dependencies,
-    TRAJECTORY_PATH, TRAJECTORY_PHYSICS_PATH, TRAJECTORY_EKF_PATH,
+    TRAJECTORY_PATH, TRAJECTORY_EKF_PATH,
 )
 
 _DEFAULT_CSV = str(
@@ -106,11 +104,9 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
         self._builder:   Optional[SceneBuilder]     = None
         self._animator:  Optional[Animator]          = None
         self._cam_mgr:   Optional[CameraManager]     = None
-        self._validator: Optional[PhysicsValidator]  = None
         self._draper:    Optional[TerrainDraper]     = None
         # Load last CSV path if available, otherwise use default
         self._csv_path: str = _load_last_csv_path() or _DEFAULT_CSV
-        self._physics_mode: bool = False
         self._ekf_mode:     bool = False
         self._prebake_mode: bool = True
 
@@ -171,17 +167,16 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
 
     def _create_panel(self) -> None:
         self._panel = DrifterUIPanel(
-            on_load_csv        = self._on_load_csv,
-            on_build           = self._build_pipeline,
-            on_play            = self._on_play,
-            on_pause           = self._on_pause,
-            on_stop            = self._on_stop,
-            on_speed           = self._on_speed_changed,
-            on_seek            = self._on_seek,
-            on_camera          = self._on_camera_changed,
-            on_physics_toggled = self._on_physics_toggled,
-            on_ekf_toggled     = self._on_ekf_toggled,
-            on_raycast         = self._on_raycast,
+            on_load_csv    = self._on_load_csv,
+            on_build       = self._build_pipeline,
+            on_play        = self._on_play,
+            on_pause       = self._on_pause,
+            on_stop        = self._on_stop,
+            on_speed       = self._on_speed_changed,
+            on_seek        = self._on_seek,
+            on_camera      = self._on_camera_changed,
+            on_ekf_toggled = self._on_ekf_toggled,
+            on_raycast     = self._on_raycast,
         )
         self._panel.show()
 
@@ -288,33 +283,9 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
         self._cam_mgr.bake_overview_orbit()
         self._cam_mgr.activate(CameraMode.OVERVIEW)
 
-        # Step 6: Physics validation (optional)
-        if self._physics_mode:
-            panel.set_status("Step 6/6: Running physics simulation…")
-            try:
-                self._validator = PhysicsValidator(params=DrifterPhysicsParams())
-                sim_east, sim_north = self._validator.simulate(
-                    df, geo.enu_east, geo.enu_north,
-                )
-                discrepancy = self._validator.compute_discrepancy(
-                    geo.enu_east, geo.enu_north, sim_east, sim_north,
-                )
-                self._validator.bake_physics_trajectory(
-                    sim_east, sim_north,
-                    discrepancy, df["time_s"].values, fps=USD_STAGE_FPS,
-                )
-            except Exception as exc:
-                panel.set_status(f"Physics error: {exc}")
-                log.error("Physics simulation failed: %s", exc, exc_info=True)
-                return
-        else:
-            panel.set_status("Step 6/6: Physics skipped (enable via checkbox)")
-
         # Step 4b: Terrain draping (post-bake, deferred via frame counter)
         panel.set_status("Step 4b/6: Scheduling terrain drape…")
         curve_paths = [(TRAJECTORY_PATH, 0.0)]
-        if self._physics_mode:
-            curve_paths.append((TRAJECTORY_PHYSICS_PATH, 0.3))
         if self._ekf_mode:
             curve_paths.append((TRAJECTORY_EKF_PATH, 0.6))
 
@@ -377,13 +348,6 @@ class DrifterVisExtension(omni.ext.IExt if _OMNI_AVAILABLE else object):
             "Third Person":  CameraMode.THIRD_PERSON,
         }
         self._cam_mgr.activate(mode_map.get(mode_name, CameraMode.OVERVIEW))
-
-    def _on_physics_toggled(self, enabled: bool) -> None:
-        self._physics_mode = enabled
-        log.info("Physics validation: %s", "ON" if enabled else "OFF")
-        if enabled and self._loader is not None:
-            # Trigger a rebuild to include physics trajectory
-            self._build_pipeline()
 
     def _on_ekf_toggled(self, enabled: bool) -> None:
         self._ekf_mode = enabled

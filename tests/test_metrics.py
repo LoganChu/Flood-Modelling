@@ -99,6 +99,7 @@ class TestMetricsConfig:
         assert cfg.rmse_report is True
         assert cfg.output_csv == "data/metrics.csv"
         assert cfg.curvature_min_speed_ms == pytest.approx(0.05)
+        assert not hasattr(cfg, "drift_divergence_report")
 
     def test_from_yaml_empty_dict_uses_defaults(self):
         cfg = MetricsConfig.from_yaml({})
@@ -274,35 +275,6 @@ class TestVelocityError:
 
 
 # ---------------------------------------------------------------------------
-# TestDriftDivergence
-# ---------------------------------------------------------------------------
-
-class TestDriftDivergence:
-    def test_same_endpoint_zero_divergence(self):
-        rec_e = np.array([0.0, 1.0, 2.0])
-        rec_n = np.array([0.0, 1.0, 2.0])
-        div = DrifterMetrics._compute_drift_divergence(rec_e, rec_n, rec_e, rec_n)
-        assert div == pytest.approx(0.0, abs=1e-12)
-
-    def test_3_4_5_triangle_divergence(self):
-        rec_e = np.array([0.0, 0.0])
-        rec_n = np.array([0.0, 0.0])
-        sim_e = np.array([0.0, 3.0])
-        sim_n = np.array([0.0, 4.0])
-        div = DrifterMetrics._compute_drift_divergence(rec_e, rec_n, sim_e, sim_n)
-        assert div == pytest.approx(5.0, rel=1e-9)
-
-    def test_uses_last_point_only(self):
-        # Even with large intermediate divergence, only final point matters
-        rec_e = np.array([0.0, 100.0, 0.0])
-        rec_n = np.array([0.0, 100.0, 0.0])
-        sim_e = np.array([0.0, 200.0, 3.0])
-        sim_n = np.array([0.0, 200.0, 4.0])
-        div = DrifterMetrics._compute_drift_divergence(rec_e, rec_n, sim_e, sim_n)
-        assert div == pytest.approx(5.0, rel=1e-9)
-
-
-# ---------------------------------------------------------------------------
 # TestMetricsResult
 # ---------------------------------------------------------------------------
 
@@ -311,25 +283,22 @@ class TestMetricsResult:
         return MetricsResult(
             rmse_raw_gps=2.5,
             rmse_ekf=0.1,
-            rmse_physics=3.0,
             filter_improvement_ratio=25.0,
             velocity_error_mean=0.08,
             velocity_error_std=0.03,
             accel_residual_mean=0.05,
             accel_residual_std=0.02,
             curvature=np.linspace(0, 1.0, n),
-            drift_divergence=4.5,
         )
 
     def test_to_dict_keys_present(self):
         d = self._make_result().to_dict()
         expected = [
-            "rmse_raw_gps_m", "rmse_ekf_m", "rmse_physics_m",
+            "rmse_raw_gps_m", "rmse_ekf_m",
             "filter_improvement_ratio", "velocity_error_mean_ms",
             "velocity_error_std_ms", "accel_residual_mean_ms2",
             "accel_residual_std_ms2", "curvature_mean_1pm",
             "curvature_std_1pm", "curvature_high_fraction",
-            "drift_divergence_m",
         ]
         for key in expected:
             assert key in d, f"Missing key: {key}"
@@ -339,19 +308,6 @@ class TestMetricsResult:
         d = r.to_dict()
         assert d["rmse_raw_gps_m"] == pytest.approx(2.5)
         assert d["velocity_error_mean_ms"] == pytest.approx(0.08)
-        assert d["drift_divergence_m"] == pytest.approx(4.5)
-
-    def test_none_physics_fields_in_dict(self):
-        r = MetricsResult(
-            rmse_raw_gps=1.0, rmse_ekf=0.1, rmse_physics=None,
-            filter_improvement_ratio=None,
-            velocity_error_mean=0.1, velocity_error_std=0.05,
-            accel_residual_mean=0.02, accel_residual_std=0.01,
-            curvature=np.zeros(5), drift_divergence=None,
-        )
-        d = r.to_dict()
-        assert d["rmse_physics_m"] is None
-        assert d["drift_divergence_m"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -361,12 +317,11 @@ class TestMetricsResult:
 class TestCSVExport:
     def test_csv_written_and_readable(self, tmp_path):
         result = MetricsResult(
-            rmse_raw_gps=2.5, rmse_ekf=0.1, rmse_physics=3.0,
+            rmse_raw_gps=2.5, rmse_ekf=0.1,
             filter_improvement_ratio=25.0,
             velocity_error_mean=0.08, velocity_error_std=0.03,
             accel_residual_mean=0.05, accel_residual_std=0.02,
             curvature=np.ones(10) * 0.2,
-            drift_divergence=4.5,
         )
         out = tmp_path / "metrics.csv"
         cfg = MetricsConfig(output_csv=str(out))
@@ -378,11 +333,11 @@ class TestCSVExport:
 
     def test_csv_contains_expected_columns(self, tmp_path):
         result = MetricsResult(
-            rmse_raw_gps=1.0, rmse_ekf=0.05, rmse_physics=None,
+            rmse_raw_gps=1.0, rmse_ekf=0.05,
             filter_improvement_ratio=20.0,
             velocity_error_mean=0.1, velocity_error_std=0.05,
             accel_residual_mean=0.02, accel_residual_std=0.01,
-            curvature=np.zeros(5), drift_divergence=None,
+            curvature=np.zeros(5),
         )
         out = tmp_path / "m.csv"
         DrifterMetrics().export_csv(result, str(out))
@@ -393,11 +348,11 @@ class TestCSVExport:
 
     def test_csv_parent_dirs_created(self, tmp_path):
         result = MetricsResult(
-            rmse_raw_gps=1.0, rmse_ekf=0.1, rmse_physics=None,
+            rmse_raw_gps=1.0, rmse_ekf=0.1,
             filter_improvement_ratio=10.0,
             velocity_error_mean=0.1, velocity_error_std=0.05,
             accel_residual_mean=0.02, accel_residual_std=0.01,
-            curvature=np.zeros(3), drift_divergence=None,
+            curvature=np.zeros(3),
         )
         deep = tmp_path / "deep" / "nested" / "metrics.csv"
         DrifterMetrics().export_csv(result, str(deep))
@@ -419,26 +374,13 @@ class TestFullCompute:
         result = DrifterMetrics().compute(df, geo, ekf_df)
         assert isinstance(result, MetricsResult)
 
-    def test_no_physics_gives_none_fields(self):
+    def test_compute_gives_filter_ratio(self):
         n = 15
         geo = _make_geo(np.zeros(n), np.linspace(0, 3, n))
         df = _make_df(n)
         ekf_df = _make_ekf_df_moving(n)
         result = DrifterMetrics().compute(df, geo, ekf_df)
-        assert result.rmse_physics is None
-        assert result.drift_divergence is None
         assert result.filter_improvement_ratio is not None
-
-    def test_with_physics_populates_fields(self):
-        n = 15
-        geo = _make_geo(np.zeros(n), np.linspace(0, 3, n))
-        df = _make_df(n)
-        ekf_df = _make_ekf_df_moving(n)
-        sim_e = np.ones(n) * 2.0
-        sim_n = np.linspace(0, 3, n) + 1.0
-        result = DrifterMetrics().compute(df, geo, ekf_df, sim_east=sim_e, sim_north=sim_n)
-        assert result.rmse_physics is not None
-        assert result.drift_divergence is not None
 
     def test_curvature_array_length_matches_data(self):
         n = 30
@@ -510,17 +452,12 @@ class TestRealCSVIntegration:
         from drifter_vis.src.data_loader import DrifterDataLoader
         from drifter_vis.src.geo_converter import GeoConverter
         from drifter_vis.src.state_estimator import StateEstimator
-        from drifter_vis.src.physics_validator import PhysicsValidator
 
         df = DrifterDataLoader().load(REAL_CSV)
         geo = GeoConverter().convert(df)
         ekf_df = StateEstimator().run(df, geo.enu_east, geo.enu_north)
-        validator = PhysicsValidator()
-        sim_east, sim_north = validator.simulate(df, geo.enu_east, geo.enu_north)
-        result = DrifterMetrics().compute(
-            df, geo, ekf_df, sim_east=sim_east, sim_north=sim_north
-        )
-        return df, geo, ekf_df, sim_east, sim_north, result
+        result = DrifterMetrics().compute(df, geo, ekf_df)
+        return df, geo, ekf_df, result
 
     def test_result_is_metrics_result(self, pipeline_result):
         *_, result = pipeline_result
@@ -539,11 +476,6 @@ class TestRealCSVIntegration:
         *_, result = pipeline_result
         # EKF vs GPS speed error should be < 2 m/s on a slow river
         assert result.velocity_error_mean < 2.0
-
-    def test_physics_fields_populated(self, pipeline_result):
-        *_, result = pipeline_result
-        assert result.rmse_physics is not None
-        assert result.drift_divergence is not None
 
     def test_curvature_reasonable(self, pipeline_result):
         *_, result = pipeline_result
