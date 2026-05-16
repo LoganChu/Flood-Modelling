@@ -1,11 +1,21 @@
-# Optional recommended packages for extending the scaffold
+# Core
 numpy
 pandas
 pyyaml
-# For ML: install one of the following
+pytest
+
+# Signal processing & visualisation
+scipy
+matplotlib
+plotly
+
+# Machine learning
+scikit-learn
+
+# For ML: install one of the following (optional)
 # torch
 # tensorflow
+
 # For geospatial processing (optional)
 # rasterio
 # geopandas
-pytest
