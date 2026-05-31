@@ -12,9 +12,8 @@ plotly
 # Machine learning
 scikit-learn
 
-# For ML: install one of the following (optional)
-# torch
-# tensorflow
+# For ML
+torch
 
 # For geospatial processing (optional)
 # rasterio

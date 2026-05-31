@@ -32,7 +32,10 @@
       "Bash(xargs wc *)",
       "Bash(xargs -I {} sh -c 'echo \"=== {} ===\" && head -2 {} && wc -l {}')",
       "Bash(powershell -Command \"Get-Content 'C:/Flood-Modelling/visualizations/smoothed_forward/enoM30\\(1\\)_forward_smoothed.csv' -TotalCount 5\")",
-      "Bash(powershell *)"
+      "Bash(powershell *)",
+      "Bash(Get-ChildItem *)",
+      "Bash(Select-Object -First 50)",
+      "Bash(Format-Table FullName, PSIsContainer)"
     ]
   }
 }

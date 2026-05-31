@@ -1,0 +1,43 @@
+trajectory:
+  window: 30          # input context length (steps)
+  horizon: 10         # prediction horizon (steps)
+  features:
+    - vx_ekf
+    - vz_ekf
+    - ax_filt
+    - az_filt
+    - heading_deg
+  hidden_dim: 64
+  num_layers: 2
+  dropout: 0.2
+  batch_size: 64
+  lr: 0.001
+  lr_patience: 10
+  lr_factor: 0.5
+  early_stop_patience: 20
+  max_epochs: 200
+  val_fraction: 0.15   # chronological tail of each training run used for validation
+  gap_threshold_s: 5.0 # dt_s above this marks a millis() wrap-around boundary
+
+anomaly:
+  window: 20           # reconstruction window length (steps)
+  features:
+    - delta_east
+    - delta_north
+    - speed_ms
+    - vx_ekf
+    - vz_ekf
+    - ax_filt
+    - az_filt
+  hidden_dim: 32
+  threshold_pctile: 99
+  batch_size: 128
+  lr: 0.0005
+  lr_patience: 15
+  lr_factor: 0.5
+  early_stop_patience: 25
+  max_epochs: 150
+  val_fraction: 0.10
+  gap_threshold_s: 5.0
+
+checkpoints_dir: ml/checkpoints
