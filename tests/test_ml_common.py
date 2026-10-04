@@ -12,7 +12,12 @@ from ml.common.metrics import (
     rmse_per_horizon,
 )
 from ml.common.scaler import apply_scaler, fit_scaler
-from ml.common.windows import chronological_split, make_windows
+from ml.common.windows import (
+    blocked_split,
+    blocked_split_indices,
+    chronological_split,
+    make_windows,
+)
 
 
 def _make_dummy_df(n: int = 100) -> pd.DataFrame:
@@ -108,6 +113,32 @@ class TestMakeWindows:
         mask = np.ones(50, dtype=bool)  # all gaps
         X, y = make_windows(feat, mask, window=10, horizon=5)
         assert len(X) == 0
+
+
+class TestBlockedSplit:
+    def test_val_is_spread_in_contiguous_blocks(self):
+        train_idx, val_idx = blocked_split_indices(1000, val_fraction=0.10, n_blocks=5, gap_buffer=20)
+        assert len(val_idx) == 100
+        blocks = np.split(val_idx, np.where(np.diff(val_idx) > 1)[0] + 1)
+        assert [len(b) for b in blocks] == [20] * 5
+        assert [int(b[0]) for b in blocks] == [90, 290, 490, 690, 890]
+
+    def test_buffer_separates_train_from_val(self):
+        train_idx, val_idx = blocked_split_indices(1000, val_fraction=0.10, n_blocks=5, gap_buffer=20)
+        nearest = np.abs(train_idx[:, None] - val_idx[None, :]).min()
+        assert nearest == 21
+        assert len(train_idx) == 1000 - 100 - 5 * 2 * 20
+        assert len(np.intersect1d(train_idx, val_idx)) == 0
+
+    def test_blocked_split_splits_each_run(self):
+        X_runs = [np.full((200, 4, 2), i, dtype=np.float32) for i in range(3)]
+        X_train, y_train, X_val, y_val = blocked_split(X_runs, X_runs, 0.10, n_blocks=2, gap_buffer=5)
+        assert X_val.shape == (60, 4, 2)
+        assert X_train.shape == (3 * (200 - 20 - 2 * 2 * 5), 4, 2)
+        # every run contributes equally to validation
+        assert [int((X_val[:, 0, 0] == i).sum()) for i in range(3)] == [20, 20, 20]
+        np.testing.assert_array_equal(y_val, X_val)
+        np.testing.assert_array_equal(y_train, X_train)
 
 
 class TestScaler:

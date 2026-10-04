@@ -2,7 +2,7 @@
 """4-fold Leave-One-Out CV training for the trajectory prediction LSTM.
 
 Usage:
-    python ml/trajectory_prediction/train.py [--max-epochs N] [--folds N]
+    python ml/trajectory_prediction/train.py [--max-epochs N] [--folds N] [--device cuda|cpu]
 """
 
 import argparse
@@ -22,7 +22,7 @@ sys.path.insert(0, str(_REPO_ROOT))
 from ml.common.features import derive_features, get_gap_mask
 from ml.common.io import load_smoothed_runs
 from ml.common.scaler import apply_scaler, fit_scaler, save_scaler
-from ml.common.windows import chronological_split, make_windows
+from ml.common.windows import blocked_split, make_windows
 from ml.trajectory_prediction.dataset import SlidingWindowDataset
 from ml.trajectory_prediction.model import TrajectoryLSTM
 
@@ -73,6 +73,7 @@ def train_fold(
     cfg: dict,
     ckpt_dir: Path,
     max_epochs: int,
+    device: torch.device,
 ) -> dict:
     feature_cols: list[str] = cfg["features"]
     window: int = cfg["window"]
@@ -97,18 +98,21 @@ def train_fold(
         if len(X_r):
             X_parts.append(X_r)
             y_parts.append(y_r)
-    X_all = np.concatenate(X_parts)
-    y_all = np.concatenate(y_parts)
-    print(f"  Training windows: {len(X_all)}")
+    print(f"  Training windows: {sum(len(X_r) for X_r in X_parts)}")
 
     # Fit scaler on training features (flat view)
-    scaler = fit_scaler(X_all)
-    X_all = apply_scaler(X_all, scaler)
+    scaler = fit_scaler(np.concatenate(X_parts))
+    X_parts = [apply_scaler(X_r, scaler) for X_r in X_parts]
 
-    # Chronological val split using last val_frac of the concatenated training windows.
-    # gap_buffer = 3 * window to avoid leakage from overlapping windows at the boundary.
-    X_train, y_train, X_val, y_val = chronological_split(
-        X_all, y_all, val_fraction=val_frac, gap_buffer=3 * window
+    # Validation = blocks spread through every training run.
+    # gap_buffer = window + horizon (one full sample span) so no train sample shares
+    # timesteps with a val sample; every block pays it twice, so it is kept minimal.
+    X_train, y_train, X_val, y_val = blocked_split(
+        X_parts,
+        y_parts,
+        val_fraction=val_frac,
+        n_blocks=cfg["val_blocks_per_run"],
+        gap_buffer=window + horizon,
     )
     print(f"  Train: {len(X_train)}  Val: {len(X_val)}")
 
@@ -125,18 +129,20 @@ def train_fold(
         num_layers=num_layers,
         dropout=dropout,
         horizon=horizon,
-    )
+    ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = ReduceLROnPlateau(optimizer, patience=lr_patience, factor=lr_factor)
     criterion = nn.MSELoss()
 
     best_val_loss = float("inf")
+    best_epoch = 0
     no_improve = 0
     best_state = None
 
     for epoch in range(1, max_epochs + 1):
         model.train()
         for X_b, y_b in train_loader:
+            X_b, y_b = X_b.to(device), y_b.to(device)
             optimizer.zero_grad()
             loss = criterion(model(X_b), y_b)
             loss.backward()
@@ -147,18 +153,20 @@ def train_fold(
         val_losses = []
         with torch.no_grad():
             for X_b, y_b in val_loader:
+                X_b, y_b = X_b.to(device), y_b.to(device)
                 val_losses.append(criterion(model(X_b), y_b).item())
         val_loss = float(np.mean(val_losses))
         scheduler.step(val_loss)
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            best_state = {k: v.clone() for k, v in model.state_dict().items()}
+            best_epoch = epoch
+            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
             no_improve = 0
         else:
             no_improve += 1
             if no_improve >= patience:
-                print(f"  Early stop at epoch {epoch} (val_loss={best_val_loss:.6f})")
+                print(f"  Early stop at epoch {epoch} (best epoch {best_epoch}, val_loss={best_val_loss:.6f})")
                 break
 
         if epoch % 20 == 0:
@@ -173,6 +181,8 @@ def train_fold(
             "holdout_run": test_run["run_id"],
             "model_state_dict": best_state,
             "val_loss": best_val_loss,
+            "best_epoch": best_epoch,
+            "epochs_run": epoch,
             "cfg": {
                 "input_size": len(feature_cols),
                 "hidden_dim": hidden_dim,
@@ -192,7 +202,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--max-epochs", type=int, default=None)
     parser.add_argument("--folds", type=int, default=4, help="Number of LOO folds to run (1-4)")
+    parser.add_argument("--device", type=str, default=None, help="cuda or cpu (default: cuda if available)")
     args = parser.parse_args()
+
+    device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    print(f"Device: {device}")
 
     cfg = _load_cfg()
     max_epochs = args.max_epochs if args.max_epochs is not None else cfg["max_epochs"]
@@ -207,7 +221,7 @@ def main() -> None:
     for fold_idx in range(min(args.folds, len(runs))):
         test_run = runs[fold_idx]
         train_runs = [r for i, r in enumerate(runs) if i != fold_idx]
-        result = train_fold(fold_idx, train_runs, test_run, cfg, ckpt_dir, max_epochs)
+        result = train_fold(fold_idx, train_runs, test_run, cfg, ckpt_dir, max_epochs, device)
         results.append(result)
 
     print("\n=== LOO-CV Summary ===")

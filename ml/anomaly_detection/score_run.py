@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Inference: score a smoothed CSV for anomalies using the trained autoencoder.
 
-Loads model, scaler, and threshold from ml/checkpoints/.
-Outputs a new CSV with anomaly_score and anomaly_flag columns appended.
+Loads model, scaler, score normaliser, and threshold from ml/checkpoints/.
+Outputs a new CSV with anomaly_score, anomaly_flag, and anomaly_feature (the
+feature responsible for the score) columns appended.
 
 Usage:
     python ml/anomaly_detection/score_run.py <smoothed_csv> [--out <output_csv>]
@@ -21,6 +22,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT))
 
 from ml.anomaly_detection.model import LSTMAutoencoder
+from ml.anomaly_detection.scoring import anomaly_scores, per_sample_feature_errors
 from ml.common.features import derive_features, get_gap_mask
 from ml.common.scaler import load_scaler, apply_scaler
 
@@ -46,6 +48,13 @@ def score_csv(csv_path: Path, out_path: Path | None = None) -> pd.DataFrame:
 
     scaler = load_scaler(ckpt_dir / "anomaly_scaler.joblib")
     threshold = float(np.load(ckpt_dir / "anomaly_threshold.npy"))
+    feature_norm_path = ckpt_dir / "anomaly_feature_norm.npy"
+    if not feature_norm_path.exists():
+        raise FileNotFoundError(
+            f"{feature_norm_path} not found. "
+            "Run ml/anomaly_detection/train.py --calibrate-only to create it."
+        )
+    feature_norm = np.load(feature_norm_path)
 
     df = pd.read_csv(csv_path, low_memory=False)
     df.columns = [c.strip() for c in df.columns]
@@ -62,55 +71,22 @@ def score_csv(csv_path: Path, out_path: Path | None = None) -> pd.DataFrame:
     if n < window:
         raise ValueError(
             f"CSV has only {n} rows but window size is {window}. "
-            "Need at least {window} rows to score."
+            f"Need at least {window} rows to score."
         )
 
     gap_mask = get_gap_mask(df, threshold_s=gap_thr)
     feat = df[feature_cols].values.astype(np.float32)
     feat_scaled = apply_scaler(feat, scaler)
 
-    # Build windows and track which sample indices each window covers
-    windows_list = []
-    window_indices = []  # list of (start, end) pairs in original sample space
-    for start in range(0, n - window + 1):
-        end = start + window
-        if gap_mask[start:end].any():
-            continue
-        windows_list.append(feat_scaled[start:end])
-        window_indices.append((start, end))
-
-    if not windows_list:
-        df["anomaly_score"] = np.nan
-        df["anomaly_flag"] = 0
-        if out_path:
-            df.to_csv(out_path, index=False)
-        return df
-
-    X = torch.from_numpy(np.array(windows_list, dtype=np.float32))
-    per_window_errors = []
-    batch_size = 512
-    with torch.no_grad():
-        for i in range(0, len(X), batch_size):
-            errors = model.reconstruction_error(X[i : i + batch_size])
-            per_window_errors.append(errors.numpy())
-    per_window_errors = np.concatenate(per_window_errors)
-
-    # Reduce to per-sample score = mean error across all windows containing that sample
-    sample_scores = np.full(n, np.nan)
-    sample_counts = np.zeros(n, dtype=int)
-    for (start, end), err in zip(window_indices, per_window_errors):
-        for idx in range(start, end):
-            if np.isnan(sample_scores[idx]):
-                sample_scores[idx] = 0.0
-            sample_scores[idx] += err
-            sample_counts[idx] += 1
-
-    valid = sample_counts > 0
-    sample_scores[valid] /= sample_counts[valid]
+    # Per-sample score = largest per-feature reconstruction error, relative to that
+    # feature's typical error. Samples no gap-free window covers stay NaN / unflagged.
+    feature_errors = per_sample_feature_errors(model, feat_scaled, gap_mask, window)
+    sample_scores, top_feature = anomaly_scores(feature_errors, feature_norm)
 
     df["anomaly_score"] = sample_scores
     df["anomaly_flag"] = (sample_scores > threshold).astype(int)
     df.loc[np.isnan(sample_scores), "anomaly_flag"] = 0
+    df["anomaly_feature"] = [feature_cols[i] if i >= 0 else "" for i in top_feature]
 
     if out_path is not None:
         out_path.parent.mkdir(parents=True, exist_ok=True)

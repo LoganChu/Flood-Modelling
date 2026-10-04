@@ -9,14 +9,15 @@ trajectory:
     - heading_deg
   hidden_dim: 64
   num_layers: 2
-  dropout: 0.2
+  dropout: 0.4
   batch_size: 64
   lr: 0.001
   lr_patience: 10
   lr_factor: 0.5
-  early_stop_patience: 20
-  max_epochs: 200
-  val_fraction: 0.15   # chronological tail of each training run used for validation
+  early_stop_patience: 60
+  max_epochs: 1000
+  val_fraction: 0.15   # of each training run's windows, taken as blocks spread through the run
+  val_blocks_per_run: 5
   gap_threshold_s: 5.0 # dt_s above this marks a millis() wrap-around boundary
 
 anomaly:
@@ -30,14 +31,15 @@ anomaly:
     - ax_filt
     - az_filt
   hidden_dim: 32
-  threshold_pctile: 99
+  threshold_pctile: 99.5   # percentile of the per-sample anomaly score on training data
   batch_size: 128
   lr: 0.0005
   lr_patience: 15
   lr_factor: 0.5
-  early_stop_patience: 25
-  max_epochs: 150
-  val_fraction: 0.10
+  early_stop_patience: 60
+  max_epochs: 1000
+  val_fraction: 0.10        # of each run's windows, taken as blocks spread through the run
+  val_blocks_per_run: 5
   gap_threshold_s: 5.0
 
 checkpoints_dir: ml/checkpoints

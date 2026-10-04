@@ -14,7 +14,8 @@ Architecture (encoder → bottleneck → decoder):
         Linear(hidden → F_ae) per timestep  → (B, W, F_ae)
 
     Loss:  MSE(output, input)   ← unsupervised; label = input sequence
-    Anomaly score = per-window reconstruction MSE at inference time.
+    Anomaly score = per-sample, per-feature reconstruction error at inference
+    time (see scoring.py).
 """
 
 import torch

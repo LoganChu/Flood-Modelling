@@ -91,12 +91,13 @@ def _plot_run_scores(
     scores = df["anomaly_score"].values
     fig, ax = plt.subplots(figsize=(12, 4))
     ax.plot(scores, lw=0.8, color="#1f77b4", label="Anomaly score")
-    ax.axhline(threshold, color="#d62728", lw=1.5, linestyle="--", label=f"Threshold ({threshold:.4f})")
+    ax.axhline(threshold, color="#d62728", lw=1.5, linestyle="--", label=f"Threshold ({threshold:.1f})")
     for idx in known_gaps:
         if idx < len(scores):
             ax.axvline(idx, color="#ff7f0e", lw=1.5, linestyle=":", label="Known gap" if idx == known_gaps[0] else "_")
+    ax.set_yscale("log")
     ax.set_xlabel("Sample index", fontsize=10)
-    ax.set_ylabel("Reconstruction MSE", fontsize=10)
+    ax.set_ylabel("Anomaly score (x median feature error)", fontsize=10)
     ax.set_title(f"Anomaly Score — {run_id}", fontsize=11)
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
@@ -116,7 +117,7 @@ def _plot_trajectory_heatmap(df: pd.DataFrame, run_id: str, out_dir: Path) -> No
     fig, ax = plt.subplots(figsize=(8, 6))
     sc = ax.scatter(east[valid], north[valid], c=scores[valid], cmap="viridis",
                     s=8, alpha=0.8, vmin=np.nanpercentile(scores, 1), vmax=np.nanpercentile(scores, 99))
-    plt.colorbar(sc, ax=ax, label="Reconstruction MSE")
+    plt.colorbar(sc, ax=ax, label="Anomaly score (x median feature error)")
     ax.set_xlabel("East (m)", fontsize=10)
     ax.set_ylabel("North (m)", fontsize=10)
     ax.set_title(f"Anomaly Score Heatmap — {run_id}", fontsize=11)
@@ -131,14 +132,16 @@ def _plot_trajectory_heatmap(df: pd.DataFrame, run_id: str, out_dir: Path) -> No
 
 def _plot_error_histogram(all_scores: np.ndarray, threshold: float, out_dir: Path) -> None:
     pct95 = float(np.percentile(all_scores, 95))
-    pct99 = float(np.percentile(all_scores, 99))
+    # Scores span several orders of magnitude, so bin them on a log axis
+    bins = np.logspace(np.log10(all_scores.min()), np.log10(all_scores.max()), 100)
     fig, ax = plt.subplots(figsize=(9, 5))
-    ax.hist(all_scores, bins=100, color="#1f77b4", alpha=0.75, log=True)
-    ax.axvline(pct95, color="#ff7f0e", lw=1.5, linestyle="--", label=f"95th pctile ({pct95:.4f})")
-    ax.axvline(pct99, color="#d62728", lw=1.5, linestyle="--", label=f"99th pctile / threshold ({pct99:.4f})")
-    ax.set_xlabel("Reconstruction MSE", fontsize=11)
+    ax.hist(all_scores, bins=bins, color="#1f77b4", alpha=0.75, log=True)
+    ax.set_xscale("log")
+    ax.axvline(pct95, color="#ff7f0e", lw=1.5, linestyle="--", label=f"95th pctile ({pct95:.1f})")
+    ax.axvline(threshold, color="#d62728", lw=1.5, linestyle="--", label=f"Threshold ({threshold:.1f})")
+    ax.set_xlabel("Anomaly score (x median feature error, log scale)", fontsize=11)
     ax.set_ylabel("Count (log scale)", fontsize=11)
-    ax.set_title("Distribution of Per-Sample Reconstruction Errors", fontsize=12)
+    ax.set_title("Distribution of Per-Sample Anomaly Scores", fontsize=12)
     ax.legend(fontsize=10)
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
